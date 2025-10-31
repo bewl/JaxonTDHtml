@@ -1,0 +1,193 @@
+:root {
+    background: linear-gradient(180deg, #071028 0%, #071827 100%);
+    font-family: system-ui, Segoe UI, Roboto, Arial;
+    color: #e6eef8;
+}
+
+#gameWrapper {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+}
+
+canvas {
+    background: #071227;
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+}
+
+#sidebarUserInterface {
+    width: 300px;
+}
+
+.panel {
+    background: var(--panel);
+    padding: 12px;
+    border-radius: 8px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+h1 {
+    font-size: 16px;
+    margin: 4px 0 8px;
+}
+
+.statsText {
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.controlsColumn {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+button {
+    background: #0b2234;
+    border: 1px solid rgba(255, 255, 255, .03);
+    color: #dbeafe;
+    padding: 8px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.towerButtonRow {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.towerButton {
+    flex: 1 1 30%;
+    padding: 8px;
+    text-align: center;
+    border-radius: 6px;
+}
+
+.towerButton.selected {
+    outline: 2px solid var(--accent);
+}
+
+.footerNote {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.hintText {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
+}
+
+.row {
+    display: flex;
+    gap: 8px;
+}
+
+select,
+input[type="number"] {
+    background: #091a2a;
+    border: 1px solid rgba(255, 255, 255, .06);
+    color: #e6eef8;
+    border-radius: 6px;
+    padding: 6px;
+}
+
+.sectionTitle {
+    font-size: 12px;
+    color: #9fb3c8;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-top: 10px;
+}
+
+html, body {
+  height: 100%;
+}
+
+#gameWrapper {
+  height: 100vh;               /* Fill the browser height */
+  align-items: stretch;
+}
+
+#sidebarUserInterface {
+  width: clamp(280px, 22vw, 380px);  /* Responsive sidebar width */
+  flex: 0 0 auto;
+}
+
+canvas#gameCanvas {
+  flex: 1 1 auto;              /* Take remaining width */
+  width: 100%;
+  height: 100%;
+  display: block;              /* Avoid unexpected gaps */
+}
+
+/* Glow when a tower is actively selected */
+.towerButton {
+  position: relative;
+  transition: box-shadow 140ms ease, transform 120ms ease;
+  --glow-color: currentColor; /* default fallback */
+}
+
+.towerButton.selected {
+  box-shadow:
+    0 0 0 2px var(--glow-color),       /* sharp ring */
+    0 0 18px 2px var(--glow-color);    /* soft outer glow */
+  transform: translateZ(0);             /* avoid subpixel blur on some GPUs */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .towerButton { transition: none; }
+}
+
+#sidebarUserInterface input[type="checkbox"] {
+  transform: translateY(1px);
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+#sidebarUserInterface label.hintText { cursor: pointer; }
+
+/* Floating tower info tooltip */
+#towerInfoTooltip {
+  position: fixed;                 /* follow mouse via left/top */
+  z-index: 1000;
+  pointer-events: none;            /* never block mouse */
+  background: var(--panel);
+  color: #e6eef8;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 180px;
+  max-width: 260px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.03);
+  font: 13px/1.5 system-ui, Segoe UI, Roboto, Arial;
+}
+
+#towerInfoTooltip .titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+#towerInfoTooltip .colorSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  box-shadow: 0 0 10px currentColor;
+}
+
+#towerInfoTooltip .statRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+#towerInfoTooltip .label {
+  color: var(--muted);
+}
+

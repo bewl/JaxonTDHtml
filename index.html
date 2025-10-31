@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jaxon Tower Defense</title>
+    <link rel="stylesheet" href="./styles/site.css" />
+</head>
+
+<body>
+    <div id="gameWrapper">
+        <canvas id="gameCanvas" width="900" height="600"></canvas>
+        <aside id="sidebarUserInterface" class="panel">
+            <h1>Jaxon Tower Defense</h1>
+            <div class="statsText" id="statsContainer">
+                Money: $<span id="moneyValue">0</span><br />
+                Lives: <span id="livesValue">0</span><br />
+                Wave: <span id="currentWaveValue">0</span>/<span id="maxWaveValue">0</span><br />
+                Enemies alive: <span id="enemiesAliveValue">0</span>
+            </div>
+            <div class="sectionTitle">Towers</div>
+            <div class="towerButtonRow" id="towerButtonRow"></div>
+            <div class="controlsColumn">
+                <div class="row">
+                    <button id="startWaveButton">Start Wave</button>
+                    <button id="refundLastTowerButton">Refund Last</button>
+                </div>
+                <div class="row" style="align-items:center">
+                    <label class="hintText" style="display:flex;gap:8px;align-items:center">
+                        <input id="autoStartNextWaveCheckbox" type="checkbox" />
+                        Auto-start next wave
+                    </label>
+                </div>
+                <div class="row">
+                    <label class="hintText">
+                        Targeting
+                        <select id="targetingModeSelect">
+                            <option value="first">First</option>
+                            <option value="last">Last</option>
+                            <option value="strongest">Strongest</option>
+                            <option value="weakest">Weakest</option>
+                            <option value="closest">Closest</option>
+                        </select>
+                    </label>
+                    <label class="hintText">
+                        Grid Size
+                        <input id="gridCellSizeInput" type="number" min="20" max="80" step="5" value="40" />
+                    </label>
+                </div>
+                <div class="hintText">Click a tower, then click the map to place it. Towers cannot be placed on the
+                    path.</div>
+                <div class="footerNote">Edit <code>src/config/gameConfig.js</code> to rebalance waves, towers, and map.
+                </div>
+            </div>
+        </aside>
+    </div>
+    <!-- Tower info tooltip (shown on hover, positioned by JS) -->
+    <div id="towerInfoTooltip" style="display:none"></div>
+    <script type="module" src="./src/main.js"></script>
+</body>
+
+</html>
