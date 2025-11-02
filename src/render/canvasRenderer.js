@@ -10,6 +10,18 @@ function hexToRgba(hex, alpha) {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// Small 1D smooth noise for jitter (no deps)
+function _fract(x) { return x - Math.floor(x); }
+function _lerp(a, b, t) { return a + (b - a) * t; }
+function _smooth(t) { return t * t * (3 - 2 * t); }
+function _hash(n) { return _fract(Math.sin(n) * 43758.5453); }
+function noise1D(x, seed = 0) {
+    const i = Math.floor(x), f = x - i;
+    const a = _hash(i + seed), b = _hash(i + 1 + seed);
+    return _lerp(a, b, _smooth(f)); // 0..1
+}
+
+
 export class CanvasRenderer {
     constructor(renderingContext2D, gridMap, configuration) {
         this.renderingContext2D = renderingContext2D;
@@ -43,56 +55,81 @@ export class CanvasRenderer {
     drawBossTopBar(boss, now) {
         const ctx = this.renderingContext2D;
 
-        // Layout
-        const margin = 12;
-        const barWidth = Math.min(ctx.canvas.width - margin * 2, 600);
+        // ------- Layout constants (from config if present) -------
+        const ui = (this.configuration.ui && this.configuration.ui.bossBar) || {};
+        const topMargin = ui.topMarginPixels ?? 36;
+        const titleGap = ui.titleToBarGapPixels ?? 6;
+        const platePad = ui.platePaddingPixels ?? 8;
+
+        const jitterXAmt = ui.jitterXPixels ?? 4;
+        const jitterYAmt = ui.jitterYPixels ?? 3;
+        const jitterHz = ui.jitterSpeedHz ?? 2.4;
+
+        const hitShakeXA = ui.hitShakeXPixels ?? 4;
+        const hitShakeYA = ui.hitShakeYPixels ?? 4;
+
+        const barWidth = Math.min(ctx.canvas.width - (topMargin * 2), 600);
         const barHeight = 14;
+        const xBase = (ctx.canvas.width - barWidth) / 2;
 
-        // lively oscillation
-        const osc = Math.sin(now * 0.006) * 2; // gentle ±2px
+        // -------- Non-circular jitter (independent X/Y noise) --------
+        const t = now * (jitterHz / 1000); // convert ms -> "seconds" for noise
+        const jitterX = (noise1D(t * 1.07, 13) - 0.5) * 2 * jitterXAmt;
+        const jitterY = (noise1D(t * 1.19, 29) - 0.5) * 2 * jitterYAmt;
+
+        // -------- Micro-shake on recent hit (decays fast) --------
         const timeSinceHit = now - (boss._lastHitTimestamp || 0);
-        const hitShake = timeSinceHit < 140 ? (Math.random() - 0.5) * 4 : 0; // quick micro-shake
+        const shakePhase = Math.max(0, 1 - timeSinceHit / 140); // 0..1 over ~140ms
+        const shakeX = (Math.random() - 0.5) * 2 * hitShakeXA * shakePhase;
+        const shakeY = (Math.random() - 0.5) * 2 * hitShakeYA * shakePhase;
 
-        const x = (ctx.canvas.width - barWidth) / 2;
-        const y = 10 + osc + hitShake;
+        // -------- Final positions with vertical clamp (no top clipping) --------
+        const titleHeightPx = 18; // for 15px bold font
+        const minY = topMargin + titleHeightPx + titleGap; // bar's top cannot go above this
+        const baseY = minY + 10; // baseline where it rests
+        const y = Math.min(minY + 24, Math.max(minY, baseY + jitterY + shakeY)); // clamp
+        const x = xBase + jitterX + shakeX;
 
-        // Background plate
+        // -------- Background plate (covers title + bar) --------
         ctx.save();
         ctx.fillStyle = "rgba(0,0,0,0.55)";
-        ctx.fillRect(x - 8, y - 22, barWidth + 16, barHeight + 36);
+        const plateX = xBase - platePad - (jitterXAmt + hitShakeXA);   // extra room for X jitter
+        const plateY = topMargin - platePad;
+        const plateW = barWidth + (platePad * 2) + (jitterXAmt + hitShakeXA) * 2;
+        const plateH = (titleHeightPx + titleGap + barHeight + 8) + platePad * 2;
+        ctx.fillRect(plateX, plateY, plateW, plateH);
 
-        // Title
+        // -------- Title --------
         ctx.font = "bold 15px system-ui, Segoe UI, Roboto, Arial";
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillText(boss.name || "BOSS", x + barWidth / 2, y - 18);
+        ctx.fillText(boss.name || "BOSS", xBase + barWidth / 2, topMargin + 2);
 
-        // Bar background
+        // -------- Bar background --------
         ctx.fillStyle = "rgba(255,255,255,0.08)";
         ctx.fillRect(x, y, barWidth, barHeight);
 
-        // Fill amount
+        // -------- Fill amount + pulse --------
         const pct = Math.max(0, boss.hitPoints) / boss.maximumHitPoints;
         const filled = Math.max(0, Math.floor(barWidth * pct));
-
-        // Slight color pulse using boss color
         const pulse = 0.6 + 0.4 * Math.abs(Math.sin(now * 0.004));
         ctx.fillStyle = boss.fillColor || "#8b5cf6";
         ctx.globalAlpha = pulse;
         ctx.fillRect(x, y, filled, barHeight);
         ctx.globalAlpha = 1;
 
-        // HP numbers
+        // -------- Numbers --------
         const nf = new Intl.NumberFormat();
         const hpText = `${nf.format(Math.max(0, Math.floor(boss.hitPoints)))} / ${nf.format(boss.maximumHitPoints)} (${Math.round(pct * 100)}%)`;
         ctx.font = "12px system-ui, Segoe UI, Roboto, Arial";
         ctx.fillStyle = "#dbeafe";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillText(hpText, x + barWidth / 2, y + barHeight + 4);
+        ctx.fillText(hpText, xBase + barWidth / 2, y + barHeight + 4);
 
         ctx.restore();
+
     }
 
     drawFrame(gameState) {
@@ -184,18 +221,33 @@ export class CanvasRenderer {
         ctx.save();
         ctx.translate(tower.x, tower.y);
 
+        // Ensure the tower has a rotation value (in radians). If your tower
+        // update system sets this (recommended), we respect it here; otherwise
+        // fall back to zero so we do not crash.
+        const rotationRadians = (typeof tower.rotationRadians === "number")
+            ? tower.rotationRadians
+            : 0;
+
+        // Apply rotation so the barrel points toward the current target direction.
+        ctx.rotate(rotationRadians);
+
+        // Colors by tower type (kept from your prior styling)
         let circleFillColor = "#123b40";
         let rectFillColor = tower.uiColor || "#84cc16";
         if (tower.towerTypeKey === "sniper") circleFillColor = "#40334d";
         if (tower.towerTypeKey === "splash") circleFillColor = "#4b322d";
 
+        // Base body (unaffected by rotation visually since we rotate the whole local space)
         ctx.beginPath();
         ctx.arc(0, 0, 12, 0, Math.PI * 2);
         ctx.fillStyle = circleFillColor;
         ctx.fill();
 
+        // Barrel points "forward" (positive X in local space) after rotation.
+        // Previously: ctx.fillRect(-6, -6, 12, 6) — a centered bar.
+        // Now: extend outward so it visibly aims at targets.
         ctx.fillStyle = rectFillColor;
-        ctx.fillRect(-6, -6, 12, 6);
+        ctx.fillRect(0, -3, 14, 6);
 
         ctx.restore();
     }
@@ -222,6 +274,7 @@ export class CanvasRenderer {
 
         ctx.restore();
     }
+
 
     drawEnemy(enemy) {
         const ctx = this.renderingContext2D;

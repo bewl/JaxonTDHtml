@@ -16,6 +16,7 @@ import {
     buildTowerButtonsFromConfig,
     refreshStatsPanel,
 } from "./ui/uiBindings.js";
+import { toast, initializeToastService, setToastPosition } from "./ui/toast.js";
 
 import { TowerEntity } from "./entities/tower.js";
 import { EnemyEntity } from "./entities/enemy.js";
@@ -383,7 +384,11 @@ gameCanvas.addEventListener("click", (mouseEvent) => {
 
     const definition = configuration.towersByTypeKey[selectedTowerTypeKey];
     if (gameState.money < definition.buildCost) {
-        alert("Not enough money");
+        toast.warn("You do not have enough money for that tower.", {
+            title: "Insufficient Funds",
+            durationMs: 5000,
+            coalesceKey: "insufficient-funds"
+        });
         return;
     }
 
@@ -425,8 +430,11 @@ function update(deltaSeconds) {
     waveSpawnerSystem.tick(gameState, deltaSeconds);
 
     if (gameState.lives <= 0) {
-        alert("Game Over");
-        resetGameState();
+        toast.error("You ran out of lives. Click to restart run.", {
+            title: "Game Over",
+            durationMs: 7000,
+            onClick: () => resetGameState(),
+        });
     }
 
     refreshStatsPanel(userInterface, gameState, configuration);
@@ -451,6 +459,11 @@ function initialize() {
     window.addEventListener("resize", () =>
         handleWindowResize(configuration, gameState, renderer, gameCanvas, renderingContext2D)
     );
+
+    initializeToastService(document);
+
+    // Default is bottom-center; you can set it explicitly:
+    setToastPosition("bottom-center");
 
     // Initialize core stats
     gameState.money = configuration.startingMoney;

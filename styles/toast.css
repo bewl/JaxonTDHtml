@@ -1,0 +1,208 @@
+/* ==========================================================================
+   TOAST SYSTEM STYLES
+   Works with src/ui/toast.js
+   ========================================================================== */
+
+/* ============================= Container ============================= */
+
+#toastContainer {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  gap: 10px;
+  pointer-events: none; /* clicks pass through unless over a toast */
+}
+
+/* Top positions stack downward (newest at top) */
+#toastContainer[data-position^="top"] {
+  flex-direction: column;
+}
+
+/* Bottom positions stack upward (newest closest to bottom edge) */
+#toastContainer[data-position^="bottom"] {
+  flex-direction: column-reverse;
+}
+
+/* --- position presets --- */
+#toastContainer[data-position="top-left"] {
+  top: 16px;
+  left: 16px;
+  align-items: flex-start;
+}
+
+#toastContainer[data-position="top-center"] {
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+}
+
+#toastContainer[data-position="top-right"] {
+  top: 16px;
+  right: 16px;
+  align-items: flex-end;
+}
+
+#toastContainer[data-position="bottom-left"] {
+  bottom: 16px;
+  left: 16px;
+  align-items: flex-start;
+}
+
+#toastContainer[data-position="bottom-center"] {
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+}
+
+#toastContainer[data-position="bottom-right"] {
+  bottom: 16px;
+  right: 16px;
+  align-items: flex-end;
+}
+
+/* ============================= Toast Box ============================= */
+
+.uiToast {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 260px;
+  max-width: 380px;
+  padding: 12px 14px 14px;
+  border-radius: 10px;
+  background: var(--panel);
+  color: #e6eef8;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  animation: toast-slide-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: auto;
+}
+
+.uiToast.closing {
+  animation: toast-slide-out 160ms ease-in forwards !important;
+}
+
+/* --- header layout --- */
+.uiToast .toastHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.uiToast .toastIcon {
+  margin-right: 6px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.uiToast .toastContent {
+  flex: 1;
+}
+
+.uiToast .toastTitle {
+  font-weight: 600;
+}
+
+.uiToast .toastMessage {
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+/* --- close button --- */
+.uiToast .toastClose {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: transparent;
+  border: 0;
+  color: #aab6c5;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px;
+  transition: color 0.15s ease;
+}
+
+.uiToast .toastClose:hover {
+  color: #ffffff;
+}
+
+/* ============================= Progress Bar ============================= */
+
+/* Background track */
+.uiToast .toastBar {
+  margin-top: 10px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+/* Animated fill */
+.uiToast .toastBar > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  animation: toast-progress var(--toast-duration, 3500ms) linear forwards;
+  background: var(--toast-accent, #4ade80);
+}
+
+/* ============================= Variants ============================= */
+
+.uiToast.info {
+  --toast-accent: #60a5fa;
+}
+
+.uiToast.success {
+  --toast-accent: #34d399;
+}
+
+.uiToast.warn {
+  --toast-accent: #f59e0b;
+}
+
+.uiToast.error {
+  --toast-accent: #f87171;
+}
+
+/* ============================= Animations ============================= */
+
+/* entry */
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* exit */
+@keyframes toast-slide-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* progress shrinking left-to-right */
+@keyframes toast-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}

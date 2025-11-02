@@ -61,6 +61,22 @@ export const GAME_CONFIG = {
         },
 
     },
+    ui: {
+        bossBar: {
+            topMarginPixels: 36,
+            titleToBarGapPixels: 6,
+            platePaddingPixels: 8,
+
+            // Jitter (independent, non-circular)
+            jitterXPixels: 4,        // horizontal jitter amplitude
+            jitterYPixels: 3,        // vertical jitter amplitude
+            jitterSpeedHz: 2.4,      // base speed of jitter
+
+            // Hit micro-shake (decays quickly)
+            hitShakeXPixels: 4,
+            hitShakeYPixels: 4,
+        },
+    },
 };
 
 // Factories kept as plain functions so we never need to deep-clone config with functions.
