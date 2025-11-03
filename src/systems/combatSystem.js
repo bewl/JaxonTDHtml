@@ -4,6 +4,7 @@
 
 import { distanceBetweenPoints, linearInterpolate } from "../core/mathUtils.js";
 import { ProjectileEntity } from "../entities/projectile.js";
+import { FloatingText } from "../entities/floatingText.js";
 
 // -------------------------------------------
 // Target selection
@@ -108,7 +109,6 @@ export class CombatSystem {
             // Smoothly rotate tower toward target
             if (targetEnemy) {
                 updateTowerFacingTowardsTarget(tower, targetEnemy, deltaSeconds, {
-                    // Adjust if your tower art faces up/down instead of right
                     spriteForwardOffsetRadians: 0
                 });
             }
@@ -132,6 +132,9 @@ export class CombatSystem {
             }
         }
 
+        // Precompute global damage multiplier (admin-controlled)
+        const globalDmgMult = Math.max(0, Number(gameState?.modifiers?.towerDamageMultiplier ?? 1));
+
         // Projectiles resolve
         for (const projectile of gameState.projectiles) {
             projectile.travelProgress += deltaSeconds * gameState.configuration.projectileLerpSpeedPerSecond;
@@ -141,6 +144,7 @@ export class CombatSystem {
 
             if (projectile.travelProgress >= 1) {
                 if (projectile.splash) {
+                    // Splash: apply to all enemies within radius; record actual applied damage
                     for (const enemy of gameState.enemies) {
                         if (enemy._isMarkedDead) continue;
                         const distance = Math.hypot(
@@ -148,13 +152,57 @@ export class CombatSystem {
                             enemy.y - projectile._currentY
                         );
                         if (distance < projectile.splash.radiusPixels) {
-                            enemy.hitPoints -= projectile.damagePerHit;
-                            enemy._lastHitTimestamp = performance.now();
+                            const before = Math.max(0, enemy.hitPoints);
+
+                            // <<< global multiplier here >>>
+                            const raw = Math.max(0, Math.round(projectile.damagePerHit * globalDmgMult));
+                            const applied = Math.min(raw, before); // clamp for overkill
+
+                            if (applied > 0) {
+                                enemy.hitPoints = before - applied;
+                                enemy._lastHitTimestamp = performance.now();
+                                enemy._lastDamageAmount = applied;
+
+                                // Floating damage text (soft red)
+                                gameState.floatingTexts.push(
+                                    new FloatingText({
+                                        x: enemy.x,
+                                        y: enemy.y - (enemy.isBoss ? 26 : 18),
+                                        text: `-${applied}`,
+                                        color: "#fca5a5",
+                                        lifetimeMs: 900,
+                                        risePixels: enemy.isBoss ? 34 : 28
+                                    })
+                                );
+                            }
                         }
                     }
                 } else if (projectile.targetEnemy && !projectile.targetEnemy._isMarkedDead) {
-                    projectile.targetEnemy.hitPoints -= projectile.damagePerHit;
-                    projectile.targetEnemy._lastHitTimestamp = performance.now();
+                    // Direct hit: record actual applied damage
+                    const enemy = projectile.targetEnemy;
+                    const before = Math.max(0, enemy.hitPoints);
+
+                    // <<< global multiplier here >>>
+                    const raw = Math.max(0, Math.round(projectile.damagePerHit * globalDmgMult));
+                    const applied = Math.min(raw, before); // clamp for overkill
+
+                    if (applied > 0) {
+                        enemy.hitPoints = before - applied;
+                        enemy._lastHitTimestamp = performance.now();
+                        enemy._lastDamageAmount = applied;
+
+                        // Floating damage text
+                        gameState.floatingTexts.push(
+                            new FloatingText({
+                                x: enemy.x,
+                                y: enemy.y - (enemy.isBoss ? 26 : 18),
+                                text: `-${applied}`,
+                                color: "#fca5a5",
+                                lifetimeMs: 900,
+                                risePixels: enemy.isBoss ? 34 : 28
+                            })
+                        );
+                    }
                 }
                 projectile._isComplete = true;
             }
@@ -171,4 +219,5 @@ export class CombatSystem {
 
         gameState.projectiles = gameState.projectiles.filter((p) => !p._isComplete);
     }
+
 }

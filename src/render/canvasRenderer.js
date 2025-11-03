@@ -21,7 +21,6 @@ function noise1D(x, seed = 0) {
     return _lerp(a, b, _smooth(f)); // 0..1
 }
 
-
 export class CanvasRenderer {
     constructor(renderingContext2D, gridMap, configuration) {
         this.renderingContext2D = renderingContext2D;
@@ -51,85 +50,103 @@ export class CanvasRenderer {
         this.placementGhost = ghost;
     }
 
-
     drawBossTopBar(boss, now) {
         const ctx = this.renderingContext2D;
 
-        // ------- Layout constants (from config if present) -------
+        // ------- Layout constants -------
         const ui = (this.configuration.ui && this.configuration.ui.bossBar) || {};
         const topMargin = ui.topMarginPixels ?? 36;
         const titleGap = ui.titleToBarGapPixels ?? 6;
         const platePad = ui.platePaddingPixels ?? 8;
 
-        const jitterXAmt = ui.jitterXPixels ?? 4;
-        const jitterYAmt = ui.jitterYPixels ?? 3;
-        const jitterHz = ui.jitterSpeedHz ?? 2.4;
+        // Shake/flash tunables
+        const hitShakeMaxX = ui.hitShakeXPixels ?? 16; // stronger base intensity
+        const hitShakeMaxY = ui.hitShakeYPixels ?? 12;
+        const hitDecayMs = ui.hitDecayMs ?? 250;
+        const hitShakeHz = ui.hitShakeHz ?? 18;      // oscillation frequency
 
-        const hitShakeXA = ui.hitShakeXPixels ?? 4;
-        const hitShakeYA = ui.hitShakeYPixels ?? 4;
-
-        const barWidth = Math.min(ctx.canvas.width - (topMargin * 2), 600);
+        // Canvas layout
+        const viewportWidth = ctx.canvas.clientWidth || ctx.canvas.width;
+        const barWidth = Math.min(viewportWidth - (topMargin * 2), 600);
         const barHeight = 14;
-        const xBase = (ctx.canvas.width - barWidth) / 2;
+        const xBase = (viewportWidth - barWidth) / 2;
 
-        // -------- Non-circular jitter (independent X/Y noise) --------
-        const t = now * (jitterHz / 1000); // convert ms -> "seconds" for noise
-        const jitterX = (noise1D(t * 1.07, 13) - 0.5) * 2 * jitterXAmt;
-        const jitterY = (noise1D(t * 1.19, 29) - 0.5) * 2 * jitterYAmt;
+        // -------- Damage → shake strength --------
+        const maxHP = Math.max(1, boss.maximumHitPoints || 1);
+        const damage = Math.max(0, boss._lastDamageAmount || 0);
+        const frac = Math.min(1, damage / maxHP);         // 0..1 fraction of HP lost in one hit
+        const dtHit = now - (boss._lastHitTimestamp || 0);
+        const decay = Math.exp(-dtHit / hitDecayMs);       // exponential fade-out
+        const strength = Math.max(0, Math.min(1, frac * decay));
 
-        // -------- Micro-shake on recent hit (decays fast) --------
-        const timeSinceHit = now - (boss._lastHitTimestamp || 0);
-        const shakePhase = Math.max(0, 1 - timeSinceHit / 140); // 0..1 over ~140ms
-        const shakeX = (Math.random() - 0.5) * 2 * hitShakeXA * shakePhase;
-        const shakeY = (Math.random() - 0.5) * 2 * hitShakeYA * shakePhase;
+        // Amplify large hits slightly more than linearly (quadratic curve)
+        // Small hits = subtle, large hits = punchy.
+        const amp = Math.pow(strength, 0.65); // lower exponent => stronger high end
 
-        // -------- Final positions with vertical clamp (no top clipping) --------
-        const titleHeightPx = 18; // for 15px bold font
-        const minY = topMargin + titleHeightPx + titleGap; // bar's top cannot go above this
-        const baseY = minY + 10; // baseline where it rests
-        const y = Math.min(minY + 24, Math.max(minY, baseY + jitterY + shakeY)); // clamp
-        const x = xBase + jitterX + shakeX;
+        // Deterministic oscillation
+        let groupOffsetX = 0, groupOffsetY = 0;
+        if (amp > 0) {
+            const w = 2 * Math.PI * hitShakeHz * (dtHit / 1000);
+            groupOffsetX = Math.sin(w) * hitShakeMaxX * amp;
+            groupOffsetY = Math.cos(w * 0.9) * hitShakeMaxY * amp;
+        }
 
-        // -------- Background plate (covers title + bar) --------
+        // -------- Layout positioning --------
+        const titleHeightPx = 18;
+        const minBarTopY = topMargin + titleHeightPx + titleGap;
+        const barY = minBarTopY + 10 + groupOffsetY;
+        const barX = xBase + groupOffsetX;
+
+        // -------- Background plate --------
         ctx.save();
-        ctx.fillStyle = "rgba(0,0,0,0.55)";
-        const plateX = xBase - platePad - (jitterXAmt + hitShakeXA);   // extra room for X jitter
-        const plateY = topMargin - platePad;
-        const plateW = barWidth + (platePad * 2) + (jitterXAmt + hitShakeXA) * 2;
+        const plateX = xBase - platePad + groupOffsetX;
+        const plateY = topMargin - platePad + groupOffsetY;
+        const plateW = barWidth + platePad * 2;
         const plateH = (titleHeightPx + titleGap + barHeight + 8) + platePad * 2;
+
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
         ctx.fillRect(plateX, plateY, plateW, plateH);
+
+        // Flash overlay (proportional to amp)
+        if (amp > 0) {
+            ctx.fillStyle = `rgba(239, 68, 68, ${0.38 * amp})`;
+            ctx.fillRect(plateX, plateY, plateW, plateH);
+        }
 
         // -------- Title --------
         ctx.font = "bold 15px system-ui, Segoe UI, Roboto, Arial";
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillText(boss.name || "BOSS", xBase + barWidth / 2, topMargin + 2);
+        ctx.fillText(boss.name || "BOSS", xBase + barWidth / 2 + groupOffsetX, topMargin + 2 + groupOffsetY);
 
-        // -------- Bar background --------
-        ctx.fillStyle = "rgba(255,255,255,0.08)";
-        ctx.fillRect(x, y, barWidth, barHeight);
+        // -------- Bar background (flashes red on hit) --------
+        if (amp > 0) {
+            ctx.fillStyle = `rgba(239, 68, 68, ${0.22 * amp})`;
+        } else {
+            ctx.fillStyle = "rgba(255,255,255,0.08)";
+        }
+        ctx.fillRect(barX, barY, barWidth, barHeight);
 
-        // -------- Fill amount + pulse --------
-        const pct = Math.max(0, boss.hitPoints) / boss.maximumHitPoints;
+        // -------- Fill amount --------
+        const pct = Math.max(0, boss.hitPoints) / maxHP;
         const filled = Math.max(0, Math.floor(barWidth * pct));
-        const pulse = 0.6 + 0.4 * Math.abs(Math.sin(now * 0.004));
+        const pulse = 0.65 + 0.35 * Math.abs(Math.sin(now * 0.004));
         ctx.fillStyle = boss.fillColor || "#8b5cf6";
         ctx.globalAlpha = pulse;
-        ctx.fillRect(x, y, filled, barHeight);
+        ctx.fillRect(barX, barY, filled, barHeight);
         ctx.globalAlpha = 1;
 
         // -------- Numbers --------
         const nf = new Intl.NumberFormat();
-        const hpText = `${nf.format(Math.max(0, Math.floor(boss.hitPoints)))} / ${nf.format(boss.maximumHitPoints)} (${Math.round(pct * 100)}%)`;
+        const hpText = `${nf.format(Math.max(0, Math.floor(boss.hitPoints)))} / ${nf.format(maxHP)} (${Math.round(pct * 100)}%)`;
         ctx.font = "12px system-ui, Segoe UI, Roboto, Arial";
         ctx.fillStyle = "#dbeafe";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillText(hpText, xBase + barWidth / 2, y + barHeight + 4);
+        ctx.fillText(hpText, xBase + barWidth / 2 + groupOffsetX, barY + barHeight + 4);
 
         ctx.restore();
-
     }
 
     drawFrame(gameState) {
@@ -187,6 +204,11 @@ export class CanvasRenderer {
             this.drawGhostTower(this.placementGhost);
         }
 
+        // Floating combat text (draw above enemies/projectiles, below HUD)
+        if (Array.isArray(gameState.floatingTexts)) {
+            for (const ft of gameState.floatingTexts) this.drawFloatingText(ft);
+        }
+
         // (after drawing grid, path, towers, enemies, projectiles)
         const now = performance.now();
 
@@ -215,6 +237,7 @@ export class CanvasRenderer {
 
         ctx.restore();
     }
+
 
     drawTower(tower) {
         const ctx = this.renderingContext2D;
@@ -275,7 +298,6 @@ export class CanvasRenderer {
         ctx.restore();
     }
 
-
     drawEnemy(enemy) {
         const ctx = this.renderingContext2D;
         const now = performance.now();
@@ -289,8 +311,10 @@ export class CanvasRenderer {
             const glowRadius = coreRadius + 28; // how far the glow extends
             const color = enemy.fillColor || "#8b5cf6";
 
-            const grad = ctx.createRadialGradient(enemy.x, enemy.y, coreRadius * 0.2,
-                enemy.x, enemy.y, glowRadius);
+            const grad = ctx.createRadialGradient(
+                enemy.x, enemy.y, coreRadius * 0.2,
+                enemy.x, enemy.y, glowRadius
+            );
             grad.addColorStop(0.0, hexToRgba(color, 0.35 * pulse));
             grad.addColorStop(0.5, hexToRgba(color, 0.18 * pulse));
             grad.addColorStop(1.0, "rgba(0,0,0,0)");
@@ -342,7 +366,6 @@ export class CanvasRenderer {
         }
     }
 
-
     drawProjectile(projectile) {
         const ctx = this.renderingContext2D;
         const t = Math.min(projectile.travelProgress, 1);
@@ -354,4 +377,36 @@ export class CanvasRenderer {
         ctx.fillStyle = "#fef08a";
         ctx.fill();
     }
+
+    drawFloatingText(ft) {
+        const ctx = this.renderingContext2D;
+
+        // progress 0..1
+        const p = Math.min(1, Math.max(0, ft.ageMs / ft.lifetimeMs));
+
+        // Ease-out for motion & scale
+        const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+        const rise = ft.risePixels * easeOutCubic(p);
+        const alpha = 1 - p;                 // fade out
+        const scale = 1 + 0.18 * (1 - p);    // slight pop at start
+
+        ctx.save();
+        ctx.translate(ft.x, ft.y - rise);
+        ctx.scale(scale, scale);
+        ctx.globalAlpha = alpha;
+
+        ctx.font = "bold 14px system-ui, Segoe UI, Roboto, Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        // Soft shadow for readability
+        ctx.shadowColor = "rgba(0,0,0,0.5)";
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = ft.color || "#ffd166";
+        ctx.fillText(ft.text, 0, 0);
+
+        ctx.restore();
+    }
+
 }

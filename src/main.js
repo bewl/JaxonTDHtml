@@ -21,6 +21,13 @@ import { toast, initializeToastService, setToastPosition } from "./ui/toast.js";
 import { TowerEntity } from "./entities/tower.js";
 import { EnemyEntity } from "./entities/enemy.js";
 
+import { projectPointOntoSegment } from "./core/mathUtils.js";
+
+import { createAdminPanel } from "./ui/adminPanel.js";
+
+import { FloatingTextSystem } from "./systems/floatingTextSystem.js";
+import { FloatingText } from "./entities/floatingText.js"; // only if you need to spawn from UI later
+
 // ===========================================
 // Responsive Canvas and Auto-Grid Helpers
 // ===========================================
@@ -42,6 +49,7 @@ function computeMaxPathXCell(pathCells) {
 }
 
 function recomputeGridForCanvas(configuration, gameState, renderer, gameCanvas) {
+    // Optionally auto-scale grid cell size based on canvas CSS width
     if (configuration.autoScaleGridCellSize) {
         const maximumPathX = computeMaxPathXCell(configuration.map.pathCells);
         const desiredColumnCount = Math.max(maximumPathX + 2, 24);
@@ -55,12 +63,48 @@ function recomputeGridForCanvas(configuration, gameState, renderer, gameCanvas) 
         );
     }
 
+    // Rebuild the grid using CSS-pixel geometry
     gameState.gridMap = new GridMap(configuration, gameCanvas);
     renderer.gridMap = gameState.gridMap;
 
-    // Clearing towers on resize keeps the demo simple
-    gameState.towers.length = 0;
+    // ===== Preserve & realign towers (no wipe) =====
+    // Towers already store gridX/gridY; recompute pixel centers for new cell size.
+    for (const tower of gameState.towers) {
+        tower.x = tower.gridX * configuration.gridCellSize + configuration.gridCellSize / 2;
+        tower.y = tower.gridY * configuration.gridCellSize + configuration.gridCellSize / 2;
+    }
+
+    // ===== Rebind/snap enemies to the new path =====
+    // 1) Point each enemy to the new waypoint list
+    // 2) Snap its (x,y) onto the closest point of the new polyline so it stays on-path
+    //    and set currentWaypointIndex to the next waypoint after the closest segment.
+    const waypoints = gameState.gridMap.waypoints;
+    if (Array.isArray(waypoints) && waypoints.length >= 2) {
+        for (const enemy of gameState.enemies) {
+            enemy.waypoints = waypoints;
+
+            // Find closest segment on the new path
+            let best = { distance: Infinity, x: enemy.x, y: enemy.y, segIndex: 0, t: 0 };
+            for (let i = 0; i < waypoints.length - 1; i += 1) {
+                const a = waypoints[i];
+                const b = waypoints[i + 1];
+                const proj = projectPointOntoSegment({ x: enemy.x, y: enemy.y }, a, b);
+                if (proj.distance < best.distance) {
+                    best = { distance: proj.distance, x: proj.x, y: proj.y, segIndex: i, t: proj.t };
+                }
+            }
+
+            // Snap enemy to the new path
+            enemy.x = best.x;
+            enemy.y = best.y;
+
+            // Advance index to the segment's endpoint we are headed toward.
+            // (Movement system will continue from here cleanly.)
+            enemy.currentWaypointIndex = Math.min(best.segIndex + 1, waypoints.length - 1);
+        }
+    }
 }
+
 
 function handleWindowResize(configuration, gameState, renderer, gameCanvas, renderingContext2D) {
     resizeAndScaleCanvasForDevicePixelRatio(gameCanvas, renderingContext2D);
@@ -104,6 +148,11 @@ const gameState = {
     enemies: [],
     towers: [],
     projectiles: [],
+    floatingTexts: [],
+    // Admin / runtime modifiers
+    modifiers: {
+        towerDamageMultiplier: 1, // <= Admin panel will change this
+    },
     factories: {
         // Use the current grid's waypoints at creation time (no stale closure)
         createEnemy: (statBlock) => new EnemyEntity(statBlock, gameState.gridMap.waypoints),
@@ -117,6 +166,7 @@ const gameState = {
     },
 };
 
+
 // Create map and renderer (grid will be recomputed in initialize())
 gameState.gridMap = new GridMap(configuration, gameCanvas);
 const renderer = new CanvasRenderer(renderingContext2D, gameState.gridMap, configuration);
@@ -127,6 +177,7 @@ const renderer = new CanvasRenderer(renderingContext2D, gameState.gridMap, confi
 
 const movementSystem = new MovementSystem();
 const combatSystem = new CombatSystem(() => userInterface.targetingModeSelect.value);
+const floatingTextSystem = new FloatingTextSystem();
 const waveSpawnerSystem = new WaveSpawnerSystem(
     WavePlanFactory,
     EnemyStatFactories,
@@ -221,13 +272,60 @@ userInterface.gridCellSizeInput.addEventListener("change", () => {
     renderer.gridMap = gameState.gridMap;
 
     gameState.towers.length = 0;
-
-    console.log("Grid cell size changed. Towers cleared.");
 });
 
 userInterface.autoStartNextWaveCheckbox.addEventListener("change", (event) => {
     gameState.autoStartNextWave = Boolean(event.target.checked);
 });
+
+// ===========================================
+// Admin Panel (hacker sandbox)
+// ===========================================
+
+// Helper so admin can programmatically select a tower after adding it
+function findShopButtonForTowerKey(key) {
+    return document.querySelector(`.towerButton[data-tower-type="${key}"]`) ||
+        document.querySelector(`.tower-button[data-tower-type="${key}"]`);
+}
+
+const adminPanel = createAdminPanel(document, gameState, configuration, {
+    rebuildTowerButtons: () => {
+        // Rebuild and keep current selection if still present
+        const previous = selectedTowerTypeKey;
+        buildTowerButtonsFromConfig(userInterface, configuration, selectTowerType);
+
+        // Re-run disabled state logic after any price changes/new towers
+        updateTowerButtonsDisableState(gameState);
+
+        if (previous && configuration.towersByTypeKey[previous]) {
+            const btn = findShopButtonForTowerKey(previous);
+            if (btn) selectTowerType(previous, btn);
+        }
+    },
+    selectTowerType: (key) => {
+        const btn = findShopButtonForTowerKey(key);
+        if (btn) selectTowerType(key, btn);
+    }
+});
+
+const openAdminButton = document.getElementById("openAdminPanelButton");
+if (openAdminButton) {
+    openAdminButton.addEventListener("click", () => adminPanel.toggle());
+}
+
+// Global hotkeys: F10 or ` (backtick) toggles panel
+window.addEventListener("keydown", (evt) => {
+    const activeTag = document.activeElement?.tagName?.toLowerCase();
+    const typing = activeTag === "input" || activeTag === "textarea" || activeTag === "select" || document.activeElement?.isContentEditable;
+    if (typing) return;
+
+    if (evt.code === "F10" || evt.key === "`") {
+        evt.preventDefault();
+        adminPanel.toggle();
+    }
+});
+
+
 
 // ===========================================
 // Pointer Interactions (hover -> tower range or placement ghost)
@@ -241,46 +339,74 @@ function showTowerTooltip(userInterface, tower, mouseClientX, mouseClientY) {
     const tooltipElement = userInterface.towerInfoTooltip;
     if (!tooltipElement) return;
 
-    // Build content
-    const attacksPerSecond = tower.attacksPerSecond.toFixed(2);
-    const damagePerShot = tower.damagePerShot;
-    const attackRangePixels = tower.attackRangePixels;
+    // --- Stats to display ---
+    const attacksPerSecond = Number(tower.attacksPerSecond ?? 0);
+    const baseDamagePerShot = Number(tower.damagePerShot ?? 0);
+    const attackRangePixels = Number(tower.attackRangePixels ?? 0);
+    const buildCost = Number(tower.buildCost ?? 0);
+
+    // Global damage multiplier from admin modifiers (defaults to 1)
+    const globalMult = Math.max(0, Number(gameState?.modifiers?.towerDamageMultiplier ?? 1));
+    const effectiveDamagePerShot = Math.max(0, Math.round(baseDamagePerShot * globalMult));
+
+    const splashRadius =
+        tower?.splash && Number.isFinite(tower.splash.radiusPixels)
+            ? Number(tower.splash.radiusPixels)
+            : null;
 
     tooltipElement.innerHTML = `
-      <div class="titleRow" style="color:${tower.uiColor}">
-        <span class="colorSwatch" style="color:${tower.uiColor}; background:${tower.uiColor}"></span>
-        <span>${tower.displayName}</span>
-      </div>
-      <div class="statRow"><span class="label">Type</span><span>${tower.towerTypeKey}</span></div>
-      <div class="statRow"><span class="label">Damage / Shot</span><span>${damagePerShot}</span></div>
-      <div class="statRow"><span class="label">Attacks / Sec</span><span>${attacksPerSecond}</span></div>
-      <div class="statRow"><span class="label">Range (px)</span><span>${attackRangePixels}</span></div>
-      <div class="statRow"><span class="label">Build Cost</span><span>$${tower.buildCost}</span></div>
-    `;
+    <div class="titleRow" style="color:${tower.uiColor}">
+      <span class="colorSwatch" style="color:${tower.uiColor}; background:${tower.uiColor}"></span>
+      <span>${tower.displayName}</span>
+    </div>
+    <div class="statRow">
+      <span class="label">Type</span><span>${tower.towerTypeKey}</span>
+    </div>
+    <div class="statRow">
+      <span class="label">Damage / Shot</span>
+      <span>${baseDamagePerShot} <span style="color:#9fb3c8;">(${effectiveDamagePerShot})</span></span>
+    </div>
+    <div class="statRow">
+      <span class="label">Attacks / Sec</span><span>${attacksPerSecond.toFixed(2)}</span>
+    </div>
+    <div class="statRow">
+      <span class="label">Range (px)</span><span>${attackRangePixels}</span>
+    </div>
+    ${splashRadius !== null ? `
+    <div class="statRow">
+      <span class="label">Splash (px)</span><span>${splashRadius}</span>
+    </div>` : ``}
+    <div class="statRow">
+      <span class="label">Build Cost</span><span>$${buildCost}</span>
+    </div>
+    ${globalMult !== 1 ? `
+    <div class="statRow">
+      <span class="label">Global Dmg Mult</span><span>x${Number(globalMult).toFixed(2)}</span>
+    </div>` : ``}
+  `;
 
-    // Show first so we can measure
+    // Show + position (CSS uses .visible to fade in)
     tooltipElement.style.display = "block";
+    tooltipElement.classList.add("visible");
 
-    // Position with clamping
     const offsetX = 16;
     const offsetY = 16;
-    const viewportWidth  = window.innerWidth;
+    const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
-    // Reset before measuring to avoid stale width/height
+    // Reset to measure
     tooltipElement.style.left = "0px";
-    tooltipElement.style.top  = "0px";
-
+    tooltipElement.style.top = "0px";
     const rect = tooltipElement.getBoundingClientRect();
-    const desiredLeft = Math.min(mouseClientX + offsetX, Math.max(8, viewportWidth  - rect.width  - 8));
-    const desiredTop  = Math.min(mouseClientY + offsetY, Math.max(8, viewportHeight - rect.height - 8));
+
+    const desiredLeft = Math.min(mouseClientX + offsetX, Math.max(8, viewportWidth - rect.width - 8));
+    const desiredTop = Math.min(mouseClientY + offsetY, Math.max(8, viewportHeight - rect.height - 8));
 
     tooltipElement.style.left = `${desiredLeft}px`;
-    tooltipElement.style.top  = `${desiredTop}px`;
-
-    // 🔥 key: actually make it visible (was missing)
-    tooltipElement.classList.add("visible");
+    tooltipElement.style.top = `${desiredTop}px`;
 }
+
+
 
 function hideTowerTooltip(userInterface) {
     const tooltipElement = userInterface.towerInfoTooltip;
@@ -315,45 +441,40 @@ function findTowerUnderPointer(gameState, mouseX, mouseY) {
  *   3) Parses "$<num>" from button text as last resort
  */
 function updateTowerButtonsDisableState(gameState) {
-  // --- HARD INSTRUMENTATION: this should always print once per call ---
-  console.log('[affordance] updateTowerButtonsDisableState() called. money =', gameState?.money);
+    // --- HARD INSTRUMENTATION: this should always print once per call ---
+    const config = gameState?.configuration?.towersByTypeKey || {};
+    const fallback = (window?.GAME_CONFIG?.towersByTypeKey) || {};
 
-  const config = gameState?.configuration?.towersByTypeKey || {};
-  const fallback = (window?.GAME_CONFIG?.towersByTypeKey) || {};
+    const buttons = document.querySelectorAll('.towerButton[data-tower-type], .tower-button[data-tower-type]');
 
-  const buttons = document.querySelectorAll('.towerButton[data-tower-type], .tower-button[data-tower-type]');
-  console.log('[affordance] buttons found =', buttons.length);
+    buttons.forEach((btn) => {
+        const key = btn.getAttribute('data-tower-type') || btn.dataset.towerType;
 
-  buttons.forEach((btn) => {
-    const key = btn.getAttribute('data-tower-type') || btn.dataset.towerType;
+        // 1) Primary source
+        let cost = config[key]?.buildCost;
 
-    // 1) Primary source
-    let cost = config[key]?.buildCost;
+        // 2) Fallback to global GAME_CONFIG if needed
+        if (!Number.isFinite(cost)) {
+            cost = fallback[key]?.buildCost;
+        }
 
-    // 2) Fallback to global GAME_CONFIG if needed
-    if (!Number.isFinite(cost)) {
-      cost = fallback[key]?.buildCost;
-    }
+        // 3) Last-resort: parse from button text, e.g., "Sniper ($60)"
+        if (!Number.isFinite(cost)) {
+            const match = /\$\s*([\d.]+)/.exec(btn.textContent);
+            cost = match ? Number(match[1]) : NaN;
+        }
 
-    // 3) Last-resort: parse from button text, e.g., "Sniper ($60)"
-    if (!Number.isFinite(cost)) {
-      const match = /\$\s*([\d.]+)/.exec(btn.textContent);
-      cost = match ? Number(match[1]) : NaN;
-    }
+        const isValidCost = Number.isFinite(cost);
+        const canAfford = isValidCost && (Number(gameState?.money ?? 0) >= cost);
 
-    const isValidCost = Number.isFinite(cost);
-    const canAfford = isValidCost && (Number(gameState?.money ?? 0) >= cost);
-
-    console.log('[affordance] key:', key, 'cost:', cost, 'valid:', isValidCost, 'canAfford:', canAfford);
-
-    if (canAfford) {
-      btn.classList.remove('is-disabled');
-      btn.removeAttribute('disabled');
-    } else {
-      btn.classList.add('is-disabled');
-      btn.setAttribute('disabled', 'disabled');
-    }
-  });
+        if (canAfford) {
+            btn.classList.remove('is-disabled');
+            btn.removeAttribute('disabled');
+        } else {
+            btn.classList.add('is-disabled');
+            btn.setAttribute('disabled', 'disabled');
+        }
+    });
 }
 
 // Expose a manual trigger in module scope so you can call it from DevTools:
@@ -486,6 +607,7 @@ function update(deltaSeconds) {
     movementSystem.tick(gameState, deltaSeconds);
     combatSystem.tick(gameState, deltaSeconds);
     waveSpawnerSystem.tick(gameState, deltaSeconds);
+    floatingTextSystem.tick(gameState, deltaSeconds); // << new
 
     updateTowerButtonsDisableState(gameState);
 
