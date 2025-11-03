@@ -202,6 +202,8 @@ userInterface.refundLastTowerButton.addEventListener("click", () => {
     gameState.towers = gameState.towers.filter((tower) => tower !== lastPlacedTower);
     lastPlacedTower = null;
 
+    updateTowerButtonsDisableState(gameState);
+
     refreshStatsPanel(userInterface, gameState, configuration);
 });
 
@@ -239,59 +241,58 @@ function showTowerTooltip(userInterface, tower, mouseClientX, mouseClientY) {
     const tooltipElement = userInterface.towerInfoTooltip;
     if (!tooltipElement) return;
 
-    // Build content (keep names descriptive)
+    // Build content
     const attacksPerSecond = tower.attacksPerSecond.toFixed(2);
     const damagePerShot = tower.damagePerShot;
     const attackRangePixels = tower.attackRangePixels;
 
     tooltipElement.innerHTML = `
-    <div class="titleRow" style="color:${tower.uiColor}">
-      <span class="colorSwatch" style="color:${tower.uiColor}; background:${tower.uiColor}"></span>
-      <span>${tower.displayName}</span>
-    </div>
-    <div class="statRow">
-      <span class="label">Type</span><span>${tower.towerTypeKey}</span>
-    </div>
-    <div class="statRow">
-      <span class="label">Damage / Shot</span><span>${damagePerShot}</span>
-    </div>
-    <div class="statRow">
-      <span class="label">Attacks / Sec</span><span>${attacksPerSecond}</span>
-    </div>
-    <div class="statRow">
-      <span class="label">Range (px)</span><span>${attackRangePixels}</span>
-    </div>
-    <div class="statRow">
-      <span class="label">Build Cost</span><span>$${tower.buildCost}</span>
-    </div>
-  `;
+      <div class="titleRow" style="color:${tower.uiColor}">
+        <span class="colorSwatch" style="color:${tower.uiColor}; background:${tower.uiColor}"></span>
+        <span>${tower.displayName}</span>
+      </div>
+      <div class="statRow"><span class="label">Type</span><span>${tower.towerTypeKey}</span></div>
+      <div class="statRow"><span class="label">Damage / Shot</span><span>${damagePerShot}</span></div>
+      <div class="statRow"><span class="label">Attacks / Sec</span><span>${attacksPerSecond}</span></div>
+      <div class="statRow"><span class="label">Range (px)</span><span>${attackRangePixels}</span></div>
+      <div class="statRow"><span class="label">Build Cost</span><span>$${tower.buildCost}</span></div>
+    `;
 
-    // Position with a gentle offset; clamp to viewport
+    // Show first so we can measure
+    tooltipElement.style.display = "block";
+
+    // Position with clamping
     const offsetX = 16;
     const offsetY = 16;
-    const viewportWidth = window.innerWidth;
+    const viewportWidth  = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
-    tooltipElement.style.display = "block";
+    // Reset before measuring to avoid stale width/height
     tooltipElement.style.left = "0px";
-    tooltipElement.style.top = "0px";
+    tooltipElement.style.top  = "0px";
 
-    // Measure after visible
     const rect = tooltipElement.getBoundingClientRect();
-    const desiredLeft = Math.min(mouseClientX + offsetX, Math.max(8, viewportWidth - rect.width - 8));
-    const desiredTop = Math.min(mouseClientY + offsetY, Math.max(8, viewportHeight - rect.height - 8));
+    const desiredLeft = Math.min(mouseClientX + offsetX, Math.max(8, viewportWidth  - rect.width  - 8));
+    const desiredTop  = Math.min(mouseClientY + offsetY, Math.max(8, viewportHeight - rect.height - 8));
 
     tooltipElement.style.left = `${desiredLeft}px`;
-    tooltipElement.style.top = `${desiredTop}px`;
+    tooltipElement.style.top  = `${desiredTop}px`;
+
+    // 🔥 key: actually make it visible (was missing)
+    tooltipElement.classList.add("visible");
 }
 
 function hideTowerTooltip(userInterface) {
     const tooltipElement = userInterface.towerInfoTooltip;
-    if (tooltipElement) {
-        tooltipElement.style.display = "none";
-    }
-}
+    if (!tooltipElement) return;
 
+    // Fade out (CSS handles opacity); then display:none after transition
+    tooltipElement.classList.remove("visible");
+
+    // Optional: wait for transition before fully hiding
+    // Keep it simple/robust if transitions are disabled:
+    tooltipElement.style.display = "none";
+}
 
 function findTowerUnderPointer(gameState, mouseX, mouseY) {
     const pickRadiusPixels = 14;
@@ -305,6 +306,61 @@ function findTowerUnderPointer(gameState, mouseX, mouseY) {
     }
     return null;
 }
+
+/**
+ * Applies a disabled style to tower shop buttons when the player cannot afford them.
+ * Sources cost from:
+ *   1) gameState.configuration.towersByTypeKey[key].buildCost
+ *   2) window.GAME_CONFIG.towersByTypeKey[key].buildCost (fallback)
+ *   3) Parses "$<num>" from button text as last resort
+ */
+function updateTowerButtonsDisableState(gameState) {
+  // --- HARD INSTRUMENTATION: this should always print once per call ---
+  console.log('[affordance] updateTowerButtonsDisableState() called. money =', gameState?.money);
+
+  const config = gameState?.configuration?.towersByTypeKey || {};
+  const fallback = (window?.GAME_CONFIG?.towersByTypeKey) || {};
+
+  const buttons = document.querySelectorAll('.towerButton[data-tower-type], .tower-button[data-tower-type]');
+  console.log('[affordance] buttons found =', buttons.length);
+
+  buttons.forEach((btn) => {
+    const key = btn.getAttribute('data-tower-type') || btn.dataset.towerType;
+
+    // 1) Primary source
+    let cost = config[key]?.buildCost;
+
+    // 2) Fallback to global GAME_CONFIG if needed
+    if (!Number.isFinite(cost)) {
+      cost = fallback[key]?.buildCost;
+    }
+
+    // 3) Last-resort: parse from button text, e.g., "Sniper ($60)"
+    if (!Number.isFinite(cost)) {
+      const match = /\$\s*([\d.]+)/.exec(btn.textContent);
+      cost = match ? Number(match[1]) : NaN;
+    }
+
+    const isValidCost = Number.isFinite(cost);
+    const canAfford = isValidCost && (Number(gameState?.money ?? 0) >= cost);
+
+    console.log('[affordance] key:', key, 'cost:', cost, 'valid:', isValidCost, 'canAfford:', canAfford);
+
+    if (canAfford) {
+      btn.classList.remove('is-disabled');
+      btn.removeAttribute('disabled');
+    } else {
+      btn.classList.add('is-disabled');
+      btn.setAttribute('disabled', 'disabled');
+    }
+  });
+}
+
+// Expose a manual trigger in module scope so you can call it from DevTools:
+// > __affordanceTest()
+window.__affordanceTest = () => updateTowerButtonsDisableState(gameState);
+
+
 
 gameCanvas.addEventListener("mousemove", (mouseEvent) => {
     const rect = getCanvasBoundingClientRect();
@@ -394,6 +450,8 @@ gameCanvas.addEventListener("click", (mouseEvent) => {
 
     gameState.money -= definition.buildCost;
 
+    updateTowerButtonsDisableState(gameState);
+
     const tower = gameState.factories.createTower(selectedTowerTypeKey, gridX, gridY);
     gameState.towers.push(tower);
     lastPlacedTower = tower;
@@ -428,6 +486,8 @@ function update(deltaSeconds) {
     movementSystem.tick(gameState, deltaSeconds);
     combatSystem.tick(gameState, deltaSeconds);
     waveSpawnerSystem.tick(gameState, deltaSeconds);
+
+    updateTowerButtonsDisableState(gameState);
 
     if (gameState.lives <= 0) {
         toast.error("You ran out of lives. Click to restart run.", {
@@ -468,6 +528,9 @@ function initialize() {
     // Initialize core stats
     gameState.money = configuration.startingMoney;
     gameState.lives = configuration.startingLives;
+
+    // NEW: set initial disabled/enabled states
+    updateTowerButtonsDisableState(gameState);
 
     // Optional starter towers for demo
     // gameState.towers.push(gameState.factories.createTower("basic", 3, 9));

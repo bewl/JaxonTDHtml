@@ -8,242 +8,268 @@
 
 /* ====================== Global Theme ====================== */
 :root {
-  --bg: #0b1220;
-  --panel: #0f1724;
-  --accent: #4ade80;
-  --muted: #94a3b8;
-  --text: #e6eef8;
-  font-family: system-ui, Segoe UI, Roboto, Arial;
-  color: var(--text);
-  background: linear-gradient(180deg, #071028 0%, #071827 100%);
+    --bg: #0b1220;
+    --panel: #0f1724;
+    --accent: #4ade80;
+    --muted: #94a3b8;
+    --text: #e6eef8;
+    font-family: system-ui, Segoe UI, Roboto, Arial;
+    color: var(--text);
+    background: linear-gradient(180deg, #071028 0%, #071827 100%);
 }
 
 /* ====================== Layout ====================== */
 
 html,
 body {
-  height: 100%;
+    height: 100%;
 }
 
 #gameWrapper {
-  display: flex;
-  gap: 12px;
-  padding: 12px;
-  height: 100vh;
-  align-items: stretch;
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    height: 100vh;
+    align-items: stretch;
 }
 
 canvas#gameCanvas {
-  flex: 1 1 auto;
-  width: 100%;
-  height: 100%;
-  display: block; /* Avoid gaps */
-  background: #071227;
-  border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    display: block;
+    /* Avoid gaps */
+    background: #071227;
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
 }
 
 /* ====================== Sidebar ====================== */
 
 #sidebarUserInterface {
-  width: clamp(280px, 22vw, 380px);
-  flex: 0 0 auto;
+    width: clamp(280px, 22vw, 380px);
+    flex: 0 0 auto;
 }
 
 .panel {
-  background: var(--panel);
-  padding: 12px;
-  border-radius: 8px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    background: var(--panel);
+    padding: 12px;
+    border-radius: 8px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
 /* ====================== Typography ====================== */
 
 h1 {
-  font-size: 16px;
-  margin: 4px 0 8px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
+    font-size: 16px;
+    margin: 4px 0 8px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
 }
 
 .statsText {
-  font-size: 14px;
-  line-height: 1.6;
+    font-size: 14px;
+    line-height: 1.6;
 }
 
 .sectionTitle {
-  font-size: 12px;
-  color: #9fb3c8;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-top: 10px;
+    font-size: 12px;
+    color: #9fb3c8;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 10px;
 }
 
 .hintText {
-  font-size: 13px;
-  color: var(--muted);
-  margin-top: 6px;
-  cursor: pointer;
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
+    cursor: pointer;
 }
 
 .footerNote {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--muted);
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
 }
 
 /* ====================== Controls ====================== */
 
 .controlsColumn {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
 }
 
 .row {
-  display: flex;
-  gap: 8px;
+    display: flex;
+    gap: 8px;
 }
 
 button {
-  background: #0b2234;
-  border: 1px solid rgba(255, 255, 255, 0.03);
-  color: #dbeafe;
-  padding: 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background 0.15s ease, border-color 0.15s ease;
+    background: #0b2234;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    color: #dbeafe;
+    padding: 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 button:hover {
-  background: #13304a;
-  border-color: rgba(255, 255, 255, 0.06);
+    background: #13304a;
+    border-color: rgba(255, 255, 255, 0.06);
 }
 
 /* ====================== Tower Buttons ====================== */
 
 .towerButtonRow {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .towerButton {
-  flex: 1 1 30%;
-  padding: 8px;
-  text-align: center;
-  border-radius: 6px;
-  background: #0b2234;
-  border: 1px solid rgba(255, 255, 255, 0.03);
-  font-weight: 500;
-  cursor: pointer;
-  position: relative;
-  transition: box-shadow 140ms ease, transform 120ms ease;
-  --glow-color: currentColor;
+    flex: 1 1 30%;
+    padding: 8px;
+    text-align: center;
+    border-radius: 6px;
+    background: #0b2234;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    transition: box-shadow 140ms ease, transform 120ms ease;
+    --glow-color: currentColor;
 }
 
 .towerButton:hover {
-  border-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.1);
 }
 
 .towerButton.selected {
-  box-shadow:
-    0 0 0 2px var(--glow-color),
-    0 0 18px 2px var(--glow-color);
-  transform: translateZ(0);
+    box-shadow:
+        0 0 0 2px var(--glow-color),
+        0 0 18px 2px var(--glow-color);
+    transform: translateZ(0);
+}
+
+/* Tower shop button base (match actual class name in markup) */
+.towerButton,
+.tower-button {
+    transition: opacity 120ms ease, filter 120ms ease, transform 120ms ease;
+}
+
+/* Disabled/insufficient-funds state */
+.towerButton.is-disabled,
+.towerButton[disabled],
+.tower-button.is-disabled,
+.tower-button[disabled] {
+    opacity: 0.45;
+    filter: grayscale(100%);
+    cursor: not-allowed;
+    pointer-events: none; /* prevent clicks while disabled */
+}
+
+.towerButton.is-disabled,
+.tower-button.is-disabled,
+.towerButton.is-disabled.selected,
+.tower-button.is-disabled.selected {
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .towerButton {
-    transition: none;
-  }
+    .towerButton {
+        transition: none;
+    }
 }
 
 /* ====================== Inputs ====================== */
 
 select,
 input[type="number"] {
-  background: #091a2a;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 6px;
+    background: #091a2a;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px;
 }
 
 #sidebarUserInterface input[type="checkbox"] {
-  transform: translateY(1px);
-  accent-color: var(--accent);
-  cursor: pointer;
+    transform: translateY(1px);
+    accent-color: var(--accent);
+    cursor: pointer;
 }
 
 /* ====================== Tower Tooltip ====================== */
 
 #towerInfoTooltip {
-  position: fixed;
-  z-index: 1000;
-  pointer-events: none;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
-  padding: 10px 12px;
-  min-width: 180px;
-  max-width: 260px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  font: 13px/1.5 system-ui, Segoe UI, Roboto, Arial;
-  opacity: 0;
-  transform: translateY(6px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 10px 12px;
+    min-width: 180px;
+    max-width: 260px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    font: 13px/1.5 system-ui, Segoe UI, Roboto, Arial;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
 #towerInfoTooltip.visible {
-  opacity: 1;
-  transform: translateY(0);
+    opacity: 1;
+    transform: translateY(0);
 }
 
 #towerInfoTooltip .titleRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-weight: 600;
 }
 
 #towerInfoTooltip .colorSwatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  box-shadow: 0 0 10px currentColor;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    box-shadow: 0 0 10px currentColor;
 }
 
 #towerInfoTooltip .statRow {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
 }
 
 #towerInfoTooltip .label {
-  color: var(--muted);
+    color: var(--muted);
 }
 
 /* ====================== Responsive ====================== */
 
 @media (max-width: 1080px) {
-  #gameWrapper {
-    flex-direction: column;
-    align-items: center;
-  }
+    #gameWrapper {
+        flex-direction: column;
+        align-items: center;
+    }
 
-  #sidebarUserInterface {
-    width: 100%;
-    max-width: 400px;
-  }
+    #sidebarUserInterface {
+        width: 100%;
+        max-width: 400px;
+    }
 
-  canvas#gameCanvas {
-    width: 100%;
-    height: auto;
-  }
+    canvas#gameCanvas {
+        width: 100%;
+        height: auto;
+    }
 }
