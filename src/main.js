@@ -210,6 +210,10 @@ let selectedTowerTypeKey = null;
 let selectedTowerButtonElement = null;
 let lastPlacedTower = null;
 
+// Drag-to-place state
+let isDragPlacing = false;
+let lastDragPlacedCellKey = null; // "x,y" guard so we don't double-place in same cell while dragging
+
 function clearPlacementSelection() {
     selectedTowerTypeKey = null;
     if (selectedTowerButtonElement) {
@@ -235,6 +239,41 @@ function selectTowerType(towerTypeKey, buttonElement) {
     selectedTowerButtonElement = buttonElement;
     selectedTowerButtonElement.classList.add("selected");
 }
+
+/**
+ * Attempts to place the currently selected tower at (gridX, gridY).
+ * Returns true if a tower was placed, else false.
+ */
+function tryPlaceSelectedTowerAtCell(gridX, gridY) {
+    if (!selectedTowerTypeKey) return false;
+    if (gameState.gridMap.isGridCellOnPath(gridX, gridY)) return false;
+    if (gameState.towers.some((t) => t.gridX === gridX && t.gridY === gridY)) return false;
+
+    const def = configuration.towersByTypeKey[selectedTowerTypeKey];
+    if (!def) return false;
+
+    if (gameState.money < def.buildCost) {
+        toast.warn("You do not have enough money for that tower.", {
+            title: "Insufficient Funds",
+            durationMs: 2500,
+            coalesceKey: "insufficient-funds"
+        });
+        return false;
+    }
+
+    gameState.money -= def.buildCost;
+
+    const tower = gameState.factories.createTower(selectedTowerTypeKey, gridX, gridY);
+    gameState.towers.push(tower);
+    lastPlacedTower = tower;
+
+    // keep UI in sync
+    updateTowerButtonsDisableState(gameState);
+    refreshStatsPanel(userInterface, gameState, configuration);
+
+    return true;
+}
+
 
 buildTowerButtonsFromConfig(userInterface, configuration, selectTowerType);
 
@@ -367,6 +406,9 @@ function showTowerTooltip(userInterface, tower, mouseClientX, mouseClientY) {
       <span>${baseDamagePerShot} <span style="color:#9fb3c8;">(${effectiveDamagePerShot})</span></span>
     </div>
     <div class="statRow">
+      <span class="label">Damage Type</span><span>${tower.damageType || "physical"}</span>
+    </div>
+    <div class="statRow">
       <span class="label">Attacks / Sec</span><span>${attacksPerSecond.toFixed(2)}</span>
     </div>
     <div class="statRow">
@@ -491,7 +533,7 @@ gameCanvas.addEventListener("mousemove", (mouseEvent) => {
     const gridX = Math.floor(mouseX / configuration.gridCellSize);
     const gridY = Math.floor(mouseY / configuration.gridCellSize);
 
-    // 1) If hovering an existing tower, show its range and the info tooltip; hide placement ghost
+    // 1) If hovering an existing tower, show range + tooltip; hide placement ghost
     const hoveredTower = findTowerUnderPointer(gameState, mouseX, mouseY);
     if (hoveredTower) {
         renderer.setPlacementGhost(null);
@@ -501,44 +543,67 @@ gameCanvas.addEventListener("mousemove", (mouseEvent) => {
             radiusPixels: hoveredTower.attackRangePixels,
             strokeColor: hoveredTower.uiColor,
         });
-
-        // ✅ Show and position the tooltip (use clientX/Y for fixed positioning)
         showTowerTooltip(userInterface, hoveredTower, mouseEvent.clientX, mouseEvent.clientY);
-        return;
+    } else {
+        hideTowerTooltip(userInterface);
+
+        // 2) Placement mode ghost + range ring (always compute; also mark invalid)
+        const towerDefinition = selectedTowerTypeKey
+            ? configuration.towersByTypeKey[selectedTowerTypeKey]
+            : null;
+
+        if (towerDefinition) {
+            const centerX = gridX * configuration.gridCellSize + configuration.gridCellSize / 2;
+            const centerY = gridY * configuration.gridCellSize + configuration.gridCellSize / 2;
+
+            const isOnPath = gameState.gridMap.isGridCellOnPath(gridX, gridY);
+            const isOccupied = gameState.towers.some((t) => t.gridX === gridX && t.gridY === gridY);
+            const isValid = !isOnPath && !isOccupied;
+
+            renderer.setPlacementGhost({
+                x: centerX,
+                y: centerY,
+                uiColor: towerDefinition.uiColor,
+                towerTypeKey: selectedTowerTypeKey,
+                isValid,
+            });
+
+            renderer.setHoverPreview({
+                x: centerX,
+                y: centerY,
+                radiusPixels: towerDefinition.attackRangePixels,
+                strokeColor: towerDefinition.uiColor,
+            });
+        } else {
+            renderer.setPlacementGhost(null);
+            renderer.setHoverPreview(null);
+        }
     }
 
-    // If not hovering a tower, hide the tooltip
-    hideTowerTooltip(userInterface);
-
-    // 2) If in placement mode, show ghost + range at the hovered cell
-    const towerDefinition = selectedTowerTypeKey
-        ? configuration.towersByTypeKey[selectedTowerTypeKey]
-        : null;
-
-    if (towerDefinition) {
-        const centerX = gridX * configuration.gridCellSize + configuration.gridCellSize / 2;
-        const centerY = gridY * configuration.gridCellSize + configuration.gridCellSize / 2;
-
-        renderer.setPlacementGhost({
-            x: centerX,
-            y: centerY,
-            uiColor: towerDefinition.uiColor,
-            towerTypeKey: selectedTowerTypeKey,
-        });
-
-        renderer.setHoverPreview({
-            x: centerX,
-            y: centerY,
-            radiusPixels: towerDefinition.attackRangePixels,
-            strokeColor: towerDefinition.uiColor,
-        });
-    } else {
-        // 3) No selection and not hovering a tower -> clear previews
-        renderer.setPlacementGhost(null);
-        renderer.setHoverPreview(null);
+    // 3) Drag-to-place: place when you move into a new valid cell
+    if (isDragPlacing && selectedTowerTypeKey) {
+        const cellKey = `${gridX},${gridY}`;
+        if (cellKey !== lastDragPlacedCellKey) {
+            // Only attempt placement if cell is not on path or occupied
+            const isOnPath = gameState.gridMap.isGridCellOnPath(gridX, gridY);
+            const isOccupied = gameState.towers.some((t) => t.gridX === gridX && t.gridY === gridY);
+            if (!isOnPath && !isOccupied) {
+                if (tryPlaceSelectedTowerAtCell(gridX, gridY)) {
+                    lastDragPlacedCellKey = cellKey;
+                } else {
+                    // If we fail due to funds, stop dragging to avoid spam
+                    if (gameState.money <= 0) {
+                        isDragPlacing = false;
+                        lastDragPlacedCellKey = null;
+                    }
+                }
+            } else {
+                // moving through invalid cells shouldn't reset the guard;
+                // only reset when we actually place or leave drag mode
+            }
+        }
     }
 });
-
 
 gameCanvas.addEventListener("mouseleave", () => {
     // Clear visuals when the cursor leaves the canvas
@@ -555,30 +620,36 @@ gameCanvas.addEventListener("click", (mouseEvent) => {
     const gridX = Math.floor(mouseX / configuration.gridCellSize);
     const gridY = Math.floor(mouseY / configuration.gridCellSize);
 
-    if (!selectedTowerTypeKey) return;
-    if (gameState.gridMap.isGridCellOnPath(gridX, gridY)) return;
-    if (gameState.towers.some((tower) => tower.gridX === gridX && tower.gridY === gridY)) return;
-
-    const definition = configuration.towersByTypeKey[selectedTowerTypeKey];
-    if (gameState.money < definition.buildCost) {
-        toast.warn("You do not have enough money for that tower.", {
-            title: "Insufficient Funds",
-            durationMs: 5000,
-            coalesceKey: "insufficient-funds"
-        });
-        return;
-    }
-
-    gameState.money -= definition.buildCost;
-
-    updateTowerButtonsDisableState(gameState);
-
-    const tower = gameState.factories.createTower(selectedTowerTypeKey, gridX, gridY);
-    gameState.towers.push(tower);
-    lastPlacedTower = tower;
-
-    refreshStatsPanel(userInterface, gameState, configuration);
+    tryPlaceSelectedTowerAtCell(gridX, gridY);
 });
+
+gameCanvas.addEventListener("mousedown", (mouseEvent) => {
+    if (!selectedTowerTypeKey) return;
+    isDragPlacing = true;
+    lastDragPlacedCellKey = null;
+
+    const rect = getCanvasBoundingClientRect();
+    const mouseX = mouseEvent.clientX - rect.left;
+    const mouseY = mouseEvent.clientY - rect.top;
+    const gridX = Math.floor(mouseX / configuration.gridCellSize);
+    const gridY = Math.floor(mouseY / configuration.gridCellSize);
+
+    // place immediately where drag begins
+    if (tryPlaceSelectedTowerAtCell(gridX, gridY)) {
+        lastDragPlacedCellKey = `${gridX},${gridY}`;
+    }
+});
+
+window.addEventListener("mouseup", () => {
+    isDragPlacing = false;
+    lastDragPlacedCellKey = null;
+});
+
+gameCanvas.addEventListener("mouseleave", () => {
+    isDragPlacing = false;
+    lastDragPlacedCellKey = null;
+});
+
 
 
 // Allow ESC to toggle selection off

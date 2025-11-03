@@ -77,6 +77,7 @@ export const GAME_CONFIG = {
             hitShakeYPixels: 4,
         },
     },
+    damageTypes: ["physical", "fire", "cold", "electric", "poison"]
 };
 
 // Factories kept as plain functions so we never need to deep-clone config with functions.

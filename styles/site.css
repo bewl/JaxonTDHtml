@@ -413,3 +413,150 @@ input[type="number"] {
     --accent: #34d399;
     color: #eafff7;
 }
+
+/* ===== Admin Panel Layout: keep header fixed at top, content scrolls ===== */
+.admin-panel {
+    /* Ensure vertical layout so header stays on top and content can flex/scroll */
+    display: flex;
+    flex-direction: column;
+
+    /* If your panel already sets explicit height/position, keep those.
+       Otherwise these help in common overlay cases: */
+    max-height: 90vh;
+    overflow: hidden; /* prevent panel itself from scrolling; delegate to .admin-content */
+}
+
+/* Stick the title bar to the top of the panel */
+.admin-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;              /* above tabs/content */
+    background: var(--panel); /* solid background so it doesn’t show content through */
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    /* Optional polish: subtle shadow to separate from content as it scrolls */
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+
+/* Content area is the only scroller */
+.admin-content {
+    flex: 1 1 auto;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch; /* smooth on trackpads/touch */
+}
+
+/* (Optional) Keep the tab bar attached to header (but still scroll with content) */
+.admin-tabs {
+    /* If you want the tab bar to ALSO be sticky, uncomment:
+    position: sticky;
+    top: var(--admin-header-height, 0px);
+    z-index: 9;
+    background: var(--panel);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    */
+}
+
+/* ====================== Admin Tabs ====================== */
+.admin-tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 0 10px;
+    background: var(--panel);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    /* make tabs stick with header if you like */
+    position: sticky; 
+    top: 42px; /* adjust if your header is taller; or remove if not using sticky */
+    z-index: 9;
+}
+
+/* Base look for tab buttons */
+.admin-tab {
+    -webkit-appearance: none;
+    appearance: none;
+    border: 1px solid rgba(255,255,255,0.10);
+    border-bottom: none;                     /* so it visually connects to the content */
+    background: linear-gradient(180deg, #0f1724 0%, #0d1420 100%);
+    color: var(--text);
+    font: 500 13px/1 system-ui, Segoe UI, Roboto, Arial;
+    padding: 8px 12px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    cursor: pointer;
+    position: relative;
+    top: 1px;                                /* sits on the content border line */
+    transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+/* Hovered (non-active) */
+.admin-tab:hover {
+    background: linear-gradient(180deg, #131c2c 0%, #0f1827 100%);
+    border-color: rgba(255,255,255,0.16);
+}
+
+/* Focus-visible for keyboard nav */
+.admin-tab:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #0a0f1a, 0 0 0 4px var(--accent);
+}
+
+/* Active tab: lifted, bold, and connected to panel content */
+.admin-tab.active {
+    background: linear-gradient(180deg, #151f31 0%, #111a29 100%);
+    color: #ffffff;
+    border-color: rgba(255,255,255,0.24);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    z-index: 1;
+}
+
+/* A thin accent underline for the active tab (visual emphasis) */
+.admin-tab.active::after {
+    content: "";
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: -1px;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+    background: var(--accent);
+}
+
+/* The content host shows a border to meet tabs */
+.admin-content {
+    background: linear-gradient(180deg, #0f1724 0%, #0c1320 100%);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-top: none;                        /* connects to tab edges */
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    padding: 12px;
+    flex: 1 1 auto;
+    overflow: auto;
+}
+
+/* Panel layout refresh so header stays fixed and tabs feel native */
+.admin-panel {
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+    overflow: hidden;
+}
+.admin-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--panel);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+
+/* Responsive: allow wrapping on small widths */
+@media (max-width: 560px) {
+    .admin-tabs {
+        flex-wrap: wrap;
+        gap: 6px;
+        padding-top: 6px;
+    }
+    .admin-tab {
+        top: 0;
+    }
+}
+

@@ -117,6 +117,9 @@ export class CombatSystem {
             if (tower.cooldownSeconds <= 0 && targetEnemy) {
                 tower.cooldownSeconds = 1 / tower.attacksPerSecond;
 
+                // NEW: carry damageType from tower (defaults to "physical")
+                const dmgType = tower.damageType || "physical";
+
                 gameState.projectiles.push(
                     new ProjectileEntity({
                         x: tower.x,
@@ -127,6 +130,7 @@ export class CombatSystem {
                         towerTypeKey: tower.towerTypeKey,
                         splash: tower.splash,
                         targetEnemy,
+                        damageType: dmgType, // <<<
                     })
                 );
             }
@@ -134,6 +138,14 @@ export class CombatSystem {
 
         // Precompute global damage multiplier (admin-controlled)
         const globalDmgMult = Math.max(0, Number(gameState?.modifiers?.towerDamageMultiplier ?? 1));
+
+        // Helper: enemy's per-type damage taken multiplier
+        const typeMultFor = (enemy, dmgType) => {
+            const map = enemy?.damageTypeMultipliers;
+            if (!map) return 1;
+            const v = Number(map[dmgType]);
+            return Number.isFinite(v) ? Math.max(0, v) : 1;
+        };
 
         // Projectiles resolve
         for (const projectile of gameState.projectiles) {
@@ -143,6 +155,8 @@ export class CombatSystem {
             projectile._currentY = linearInterpolate(projectile.y, projectile.targetY, t);
 
             if (projectile.travelProgress >= 1) {
+                const dmgType = projectile.damageType || "physical";
+
                 if (projectile.splash) {
                     // Splash: apply to all enemies within radius; record actual applied damage
                     for (const enemy of gameState.enemies) {
@@ -154,8 +168,11 @@ export class CombatSystem {
                         if (distance < projectile.splash.radiusPixels) {
                             const before = Math.max(0, enemy.hitPoints);
 
-                            // <<< global multiplier here >>>
-                            const raw = Math.max(0, Math.round(projectile.damagePerHit * globalDmgMult));
+                            // base * global * enemy per-type
+                            const raw = Math.max(
+                                0,
+                                Math.round(projectile.damagePerHit * globalDmgMult * typeMultFor(enemy, dmgType))
+                            );
                             const applied = Math.min(raw, before); // clamp for overkill
 
                             if (applied > 0) {
@@ -182,9 +199,11 @@ export class CombatSystem {
                     const enemy = projectile.targetEnemy;
                     const before = Math.max(0, enemy.hitPoints);
 
-                    // <<< global multiplier here >>>
-                    const raw = Math.max(0, Math.round(projectile.damagePerHit * globalDmgMult));
-                    const applied = Math.min(raw, before); // clamp for overkill
+                    const raw = Math.max(
+                        0,
+                        Math.round(projectile.damagePerHit * globalDmgMult * typeMultFor(enemy, dmgType))
+                    );
+                    const applied = Math.min(raw, before);
 
                     if (applied > 0) {
                         enemy.hitPoints = before - applied;
@@ -219,5 +238,6 @@ export class CombatSystem {
 
         gameState.projectiles = gameState.projectiles.filter((p) => !p._isComplete);
     }
+
 
 }
