@@ -101,12 +101,33 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         ])
     ]);
 
+    // ---------- Player / Economy (RESTORED; seeded with defaults) ----------
+    const defaultMoney = Number(configuration?.startingMoney ?? gameState.money ?? 0);
+    const defaultLives = Number(configuration?.startingLives ?? gameState.lives ?? 0);
+    const economySection = createEl("section", { class: "admin-section" }, [
+        createEl("h2", { class: "admin-section-title" }, ["Player / Economy"]),
+        createEl("form", { id: "economyForm", class: "admin-form" }, [
+            createEl("div", { class: "row2" }, [
+                createLabeledNumber("Set Money ($)", "setMoney", defaultMoney, 0, 9_999_999, 1),
+                createLabeledNumber("Set Lives", "setLives", defaultLives, 0, 9_999, 1),
+            ]),
+            createEl("div", { class: "row" }, [
+                createEl("button", { type: "submit", class: "admin-btn" }, ["Apply"])
+            ])
+        ])
+    ]);
+
     // ---------- Global Modifiers ----------
     const modifiersSection = createEl("section", { class: "admin-section" }, [
         createEl("h2", { class: "admin-section-title" }, ["Global Modifiers"]),
         createEl("form", { id: "modsForm", class: "admin-form" }, [
             createEl("div", { class: "row2" }, [
-                createLabeledNumber("Tower Damage Multiplier", "gm_dmgMult", gameState?.modifiers?.towerDamageMultiplier ?? 1, 0, 10000000, 0.05),
+                createLabeledNumber(
+                    "Tower Damage Multiplier",
+                    "gm_dmgMult",
+                    gameState?.modifiers?.towerDamageMultiplier ?? 1,
+                    0, 100, 0.05
+                ),
                 createLabeledText("Notes", "gm_notes", "Set >1 for more damage, 0 to disable tower damage."),
             ]),
             createEl("div", { class: "row" }, [
@@ -115,7 +136,7 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         ])
     ]);
 
-    panel.append(header, enemySection, towerSection, modifiersSection);
+    panel.append(header, enemySection, towerSection, economySection, modifiersSection);
     rootDocument.body.appendChild(panel);
 
     // ====== Helpers ======
@@ -135,7 +156,7 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
     // ====== Events ======
     header.querySelector("#adminCloseBtn").addEventListener("click", close);
 
-    // --- Enemy/Boss Builder submit ---
+    // Enemy/Boss Builder
     panel.querySelector("#enemyBuilderForm").addEventListener("submit", (e) => {
         e.preventDefault();
         const hp = int("#eb_hp", 1);
@@ -164,7 +185,7 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         gameState.enemies.push(enemy);
     });
 
-    // --- Boss preset ---
+    // Boss preset
     panel.querySelector("#spawnBossPresetBtn").addEventListener("click", () => {
         const waypoints = gameState.gridMap?.waypoints || [];
         if (waypoints.length < 2) return;
@@ -182,7 +203,7 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         gameState.enemies.push(enemy);
     });
 
-    // --- Tower Creator submit ---
+    // Tower Creator
     panel.querySelector("#towerCreatorForm").addEventListener("submit", (e) => {
         e.preventDefault();
 
@@ -195,7 +216,6 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         const rangePx = int("#tw_range", 40);
         const splashPx = int("#tw_splash", 0);
 
-        // Build a tower definition aligned with existing architecture
         const def = {
             displayName: name,
             buildCost: cost,
@@ -204,21 +224,16 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
             attacksPerSecond: aps,
             attackRangePixels: rangePx,
         };
+        if (splashPx > 0) def.splash = { radiusPixels: splashPx };
 
-        if (splashPx > 0) {
-            def.splash = { radiusPixels: splashPx };
-        }
-
-        // Inject/replace in config
         configuration.towersByTypeKey[key] = def;
 
-        // Rebuild shop buttons if hook exists
         if (typeof rebuildTowerButtons === "function") {
             rebuildTowerButtons();
         }
     });
 
-    // --- Tower Creator: Select In Shop ---
+    // Tower Creator: Select In Shop
     panel.querySelector("#tw_selectBtn").addEventListener("click", () => {
         const key = sanitizeKey(str("#tw_key", "custom"));
         if (typeof selectTowerType === "function") {
@@ -226,7 +241,16 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         }
     });
 
-    // --- Global Modifiers submit ---
+    // Player / Economy (APPLY)
+    panel.querySelector("#economyForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const money = int("#setMoney", defaultMoney);
+        const lives = int("#setLives", defaultLives);
+        gameState.money = Math.max(0, money);
+        gameState.lives = Math.max(0, lives);
+    });
+
+    // Global Modifiers
     panel.querySelector("#modsForm").addEventListener("submit", (e) => {
         e.preventDefault();
         const m = Math.max(0, num("#gm_dmgMult", 1));
@@ -258,6 +282,7 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         return String(key).trim().toLowerCase().replace(/[^a-z0-9_\-]/g, "-");
     }
 }
+
 
 function createLabeledNumber(label, id, value, min, max, step) {
     return createEl("label", { class: "admin-label" }, [
