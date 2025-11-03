@@ -1,6 +1,6 @@
 /* ==========================================================================
-   SITE.CSS — Jaxon Tower Defense
-   Imports toast system, styles layout, sidebar, and game canvas.
+   SITE.CSS — Jaxon Tower Defense (Consolidated)
+   Imports toast system, styles layout, sidebar, canvas, tooltips, and admin panel
    ========================================================================== */
 
 /* Bring in toast system (handles notifications, progress bar, etc.) */
@@ -13,13 +13,28 @@
     --accent: #4ade80;
     --muted: #94a3b8;
     --text: #e6eef8;
+
+    --border-weak: rgba(255, 255, 255, 0.06);
+    --border-med: rgba(255, 255, 255, 0.10);
+    --border-strong: rgba(255, 255, 255, 0.24);
+
+    --btn-bg: #0b2234;
+    --btn-bg-hover: #13304a;
+
+    --input-bg: #091a2a;
+
+    --shadow-strong: 0 18px 60px rgba(0, 0, 0, 0.5);
+    --shadow-panel-sep: 0 2px 8px rgba(0, 0, 0, 0.25);
+
+    --radius-md: 8px;
+    --radius-lg: 10px;
+
     font-family: system-ui, Segoe UI, Roboto, Arial;
     color: var(--text);
     background: linear-gradient(180deg, #071028 0%, #071827 100%);
 }
 
 /* ====================== Layout ====================== */
-
 html,
 body {
     height: 100%;
@@ -38,14 +53,12 @@ canvas#gameCanvas {
     width: 100%;
     height: 100%;
     display: block;
-    /* Avoid gaps */
     background: #071227;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
 }
 
 /* ====================== Sidebar ====================== */
-
 #sidebarUserInterface {
     width: clamp(280px, 22vw, 380px);
     flex: 0 0 auto;
@@ -54,12 +67,11 @@ canvas#gameCanvas {
 .panel {
     background: var(--panel);
     padding: 12px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
 /* ====================== Typography ====================== */
-
 h1 {
     font-size: 16px;
     margin: 4px 0 8px;
@@ -93,8 +105,7 @@ h1 {
     color: var(--muted);
 }
 
-/* ====================== Controls ====================== */
-
+/* ====================== Generic Controls ====================== */
 .controlsColumn {
     display: flex;
     flex-direction: column;
@@ -105,95 +116,40 @@ h1 {
 .row {
     display: flex;
     gap: 8px;
+    align-items: center;
+}
+
+.row2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
 }
 
 button {
-    background: #0b2234;
-    border: 1px solid rgba(255, 255, 255, 0.03);
+    background: var(--btn-bg);
+    border: 1px solid var(--border-weak);
     color: #dbeafe;
     padding: 8px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, transform .06s ease;
 }
 
 button:hover {
-    background: #13304a;
-    border-color: rgba(255, 255, 255, 0.06);
-}
-
-/* ====================== Tower Buttons ====================== */
-
-.towerButtonRow {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.towerButton {
-    flex: 1 1 30%;
-    padding: 8px;
-    text-align: center;
-    border-radius: 6px;
-    background: #0b2234;
-    border: 1px solid rgba(255, 255, 255, 0.03);
-    font-weight: 500;
-    cursor: pointer;
-    position: relative;
-    transition: box-shadow 140ms ease, transform 120ms ease;
-    --glow-color: currentColor;
-}
-
-.towerButton:hover {
+    background: var(--btn-bg-hover);
     border-color: rgba(255, 255, 255, 0.1);
 }
 
-.towerButton.selected {
-    box-shadow:
-        0 0 0 2px var(--glow-color),
-        0 0 18px 2px var(--glow-color);
-    transform: translateZ(0);
+button:active {
+    transform: translateY(1px);
 }
 
-/* Tower shop button base (match actual class name in markup) */
-.towerButton,
-.tower-button {
-    transition: opacity 120ms ease, filter 120ms ease, transform 120ms ease;
-}
-
-/* Disabled/insufficient-funds state */
-.towerButton.is-disabled,
-.towerButton[disabled],
-.tower-button.is-disabled,
-.tower-button[disabled] {
-    opacity: 0.45;
-    filter: grayscale(100%);
-    cursor: not-allowed;
-    pointer-events: none;
-    /* prevent clicks while disabled */
-}
-
-.towerButton.is-disabled,
-.tower-button.is-disabled,
-.towerButton.is-disabled.selected,
-.tower-button.is-disabled.selected {
-    box-shadow: none !important;
-    transform: none !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .towerButton {
-        transition: none;
-    }
-}
-
-/* ====================== Inputs ====================== */
-
+/* Inputs */
 select,
 input[type="number"] {
-    background: #091a2a;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--input-bg);
+    border: 1px solid var(--border-weak);
     color: var(--text);
     border-radius: 6px;
     padding: 6px;
@@ -205,21 +161,75 @@ input[type="number"] {
     cursor: pointer;
 }
 
-/* ====================== Tower Tooltip ====================== */
+/* ====================== Tower Buttons ====================== */
+.towerButtonRow {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
 
+.towerButton,
+.tower-button {
+    flex: 1 1 30%;
+    padding: 8px;
+    text-align: center;
+    border-radius: 6px;
+    background: var(--btn-bg);
+    border: 1px solid var(--border-weak);
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    transition: box-shadow 140ms ease, transform 120ms ease, opacity 120ms ease, filter 120ms ease;
+    --glow-color: currentColor;
+}
+
+.towerButton:hover,
+.tower-button:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.towerButton.selected,
+.tower-button.selected {
+    box-shadow:
+        0 0 0 2px var(--glow-color),
+        0 0 18px 2px var(--glow-color);
+    transform: translateZ(0);
+}
+
+/* Disabled/insufficient-funds */
+.towerButton.is-disabled,
+.towerButton[disabled],
+.tower-button.is-disabled,
+.tower-button[disabled] {
+    opacity: 0.45;
+    filter: grayscale(100%);
+    cursor: not-allowed;
+    pointer-events: none;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .towerButton,
+    .tower-button {
+        transition: none;
+    }
+}
+
+/* ====================== Tower Tooltip ====================== */
 #towerInfoTooltip {
     position: fixed;
     z-index: 1000;
     pointer-events: none;
     background: var(--panel);
     color: var(--text);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 8px;
+    border: 1px solid var(--border-weak);
+    border-radius: var(--radius-md);
     padding: 10px 12px;
     min-width: 180px;
     max-width: 260px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45),
-        inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.03);
     font: 13px/1.5 system-ui, Segoe UI, Roboto, Arial;
     opacity: 0;
     transform: translateY(6px);
@@ -257,7 +267,6 @@ input[type="number"] {
 }
 
 /* ====================== Responsive ====================== */
-
 @media (max-width: 1080px) {
     #gameWrapper {
         flex-direction: column;
@@ -275,24 +284,29 @@ input[type="number"] {
     }
 }
 
-/* ====================== Admin Panel ====================== */
+/* ====================== Admin Panel (Overlay) ====================== */
 .admin-panel {
     position: fixed;
     right: 16px;
     bottom: 16px;
     width: min(420px, 92vw);
-    max-height: 80vh;
-    overflow: auto;
+    max-height: 90vh;
     background: var(--panel);
     color: var(--text);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 10px;
-    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-weak);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-strong), inset 0 1px 0 rgba(255, 255, 255, 0.03);
     transform: translateY(24px);
     opacity: 0;
     pointer-events: none;
     transition: opacity 160ms ease, transform 160ms ease;
     z-index: 1001;
+
+    /* Layout: header (sticky), tabs (sticky optional), content (scrolls) */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    /* delegate scroll to .admin-content */
 }
 
 .admin-panel.open {
@@ -301,12 +315,18 @@ input[type="number"] {
     pointer-events: auto;
 }
 
+/* Header (sticky) */
 .admin-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 10px 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid var(--border-weak);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--panel);
+    box-shadow: var(--shadow-panel-sep);
 }
 
 .admin-title {
@@ -324,6 +344,80 @@ input[type="number"] {
     padding: 2px 6px;
 }
 
+/* Tabs (look like real tabs; sticky under header) */
+.admin-tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 0 10px;
+    background: var(--panel);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    position: sticky;
+    top: 42px;
+    /* adjust if header height differs; or remove for non-sticky tabs */
+    z-index: 9;
+}
+
+.admin-tab {
+    -webkit-appearance: none;
+    appearance: none;
+    border: 1px solid var(--border-med);
+    border-bottom: none;
+    background: linear-gradient(180deg, #0f1724 0%, #0d1420 100%);
+    color: var(--text);
+    font: 500 13px/1 system-ui, Segoe UI, Roboto, Arial;
+    padding: 8px 12px;
+    border-top-left-radius: var(--radius-md);
+    border-top-right-radius: var(--radius-md);
+    cursor: pointer;
+    position: relative;
+    top: 1px;
+    transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.admin-tab:hover {
+    background: linear-gradient(180deg, #131c2c 0%, #0f1827 100%);
+    border-color: rgba(255, 255, 255, 0.16);
+}
+
+.admin-tab:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #0a0f1a, 0 0 0 4px var(--accent);
+}
+
+.admin-tab.active {
+    background: linear-gradient(180deg, #151f31 0%, #111a29 100%);
+    color: #ffffff;
+    border-color: var(--border-strong);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    z-index: 1;
+}
+
+.admin-tab.active::after {
+    content: "";
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: -1px;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+    background: var(--accent);
+}
+
+/* Content host (only scroller) */
+.admin-content {
+    background: linear-gradient(180deg, #0f1724 0%, #0c1320 100%);
+    border: 1px solid var(--border-med);
+    border-top: none;
+    border-bottom-left-radius: var(--radius-md);
+    border-bottom-right-radius: var(--radius-md);
+    padding: 12px;
+    flex: 1 1 auto;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Sections & form controls inside admin */
 .admin-section {
     padding: 10px 12px;
 }
@@ -340,18 +434,6 @@ input[type="number"] {
     display: flex;
     flex-direction: column;
     gap: 10px;
-}
-
-.row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.row2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
 }
 
 .admin-label {
@@ -372,31 +454,17 @@ input[type="number"] {
 }
 
 .admin-input {
-    background: #091a2a;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--input-bg);
+    border: 1px solid var(--border-weak);
     color: var(--text);
     border-radius: 6px;
     padding: 6px;
     font-size: 14px;
 }
 
+/* Admin buttons (reuse global button base; add variants) */
 .admin-btn {
-    background: #0b2234;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    color: #dbeafe;
-    padding: 8px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background .15s ease, border-color .15s ease, transform .06s ease;
-}
-
-.admin-btn:hover {
-    background: #13304a;
-    border-color: rgba(255, 255, 255, 0.1);
-}
-
-.admin-btn:active {
-    transform: translateY(1px);
+    /* inherits button */
 }
 
 .admin-btn.primary {
@@ -414,149 +482,16 @@ input[type="number"] {
     color: #eafff7;
 }
 
-/* ===== Admin Panel Layout: keep header fixed at top, content scrolls ===== */
-.admin-panel {
-    /* Ensure vertical layout so header stays on top and content can flex/scroll */
-    display: flex;
-    flex-direction: column;
-
-    /* If your panel already sets explicit height/position, keep those.
-       Otherwise these help in common overlay cases: */
-    max-height: 90vh;
-    overflow: hidden; /* prevent panel itself from scrolling; delegate to .admin-content */
-}
-
-/* Stick the title bar to the top of the panel */
-.admin-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;              /* above tabs/content */
-    background: var(--panel); /* solid background so it doesn’t show content through */
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    /* Optional polish: subtle shadow to separate from content as it scrolls */
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-}
-
-/* Content area is the only scroller */
-.admin-content {
-    flex: 1 1 auto;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch; /* smooth on trackpads/touch */
-}
-
-/* (Optional) Keep the tab bar attached to header (but still scroll with content) */
-.admin-tabs {
-    /* If you want the tab bar to ALSO be sticky, uncomment:
-    position: sticky;
-    top: var(--admin-header-height, 0px);
-    z-index: 9;
-    background: var(--panel);
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-    */
-}
-
-/* ====================== Admin Tabs ====================== */
-.admin-tabs {
-    display: flex;
-    align-items: flex-end;
-    gap: 4px;
-    padding: 0 10px;
-    background: var(--panel);
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    /* make tabs stick with header if you like */
-    position: sticky; 
-    top: 42px; /* adjust if your header is taller; or remove if not using sticky */
-    z-index: 9;
-}
-
-/* Base look for tab buttons */
-.admin-tab {
-    -webkit-appearance: none;
-    appearance: none;
-    border: 1px solid rgba(255,255,255,0.10);
-    border-bottom: none;                     /* so it visually connects to the content */
-    background: linear-gradient(180deg, #0f1724 0%, #0d1420 100%);
-    color: var(--text);
-    font: 500 13px/1 system-ui, Segoe UI, Roboto, Arial;
-    padding: 8px 12px;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    cursor: pointer;
-    position: relative;
-    top: 1px;                                /* sits on the content border line */
-    transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
-}
-
-/* Hovered (non-active) */
-.admin-tab:hover {
-    background: linear-gradient(180deg, #131c2c 0%, #0f1827 100%);
-    border-color: rgba(255,255,255,0.16);
-}
-
-/* Focus-visible for keyboard nav */
-.admin-tab:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 2px #0a0f1a, 0 0 0 4px var(--accent);
-}
-
-/* Active tab: lifted, bold, and connected to panel content */
-.admin-tab.active {
-    background: linear-gradient(180deg, #151f31 0%, #111a29 100%);
-    color: #ffffff;
-    border-color: rgba(255,255,255,0.24);
-    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-    z-index: 1;
-}
-
-/* A thin accent underline for the active tab (visual emphasis) */
-.admin-tab.active::after {
-    content: "";
-    position: absolute;
-    left: 8px;
-    right: 8px;
-    bottom: -1px;
-    height: 3px;
-    border-radius: 3px 3px 0 0;
-    background: var(--accent);
-}
-
-/* The content host shows a border to meet tabs */
-.admin-content {
-    background: linear-gradient(180deg, #0f1724 0%, #0c1320 100%);
-    border: 1px solid rgba(255,255,255,0.10);
-    border-top: none;                        /* connects to tab edges */
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
-    padding: 12px;
-    flex: 1 1 auto;
-    overflow: auto;
-}
-
-/* Panel layout refresh so header stays fixed and tabs feel native */
-.admin-panel {
-    display: flex;
-    flex-direction: column;
-    max-height: 90vh;
-    overflow: hidden;
-}
-.admin-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: var(--panel);
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-}
-
 /* Responsive: allow wrapping on small widths */
 @media (max-width: 560px) {
     .admin-tabs {
         flex-wrap: wrap;
         gap: 6px;
         padding-top: 6px;
+        top: 40px;
     }
+
     .admin-tab {
         top: 0;
     }
 }
-
