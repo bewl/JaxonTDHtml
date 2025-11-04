@@ -182,25 +182,44 @@ export class CanvasRenderer {
                 const cellX = gridX * this.gridMap.gridCellSize;
                 const cellY = gridY * this.gridMap.gridCellSize;
 
-                // Only ask the grid if a cell is on the path when we actually have one to show
                 const isPathCell = hasDrawablePath && this.gridMap.isGridCellOnPath(gridX, gridY);
                 ctx.fillStyle = isPathCell ? "#17202b" : "rgba(255,255,255,0.02)";
-                ctx.fillRect(cellX, cellY, this.gridMap.gridCellSize - 1, this.gridMap.gridCellSize - 1);
+                ctx.fillRect(cellX, cellY, this.gridMap.gridCellSize, this.gridMap.gridCellSize);
             }
         }
 
-        // Path stroke (only if we have ≥2 waypoints)
+        // draw base path if present
         if (hasDrawablePath) {
             ctx.beginPath();
-            ctx.lineWidth = 20;
-            ctx.lineCap = "round";
-            ctx.strokeStyle = "#2c566f";
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = "#18303b";
             ctx.moveTo(waypoints[0].x, waypoints[0].y);
             for (let i = 1; i < waypoints.length; i += 1) {
                 const wp = waypoints[i];
                 ctx.lineTo(wp.x, wp.y);
             }
             ctx.stroke();
+        }
+
+        // ---- draw decals (scorch marks) under entities ----
+        if (Array.isArray(gameState.decals) && gameState.decals.length) {
+            for (const decal of gameState.decals) {
+                if (decal.type === "scorch") {
+                    const alpha = Math.max(0, Math.min(1, (decal.alpha ?? 0.8) * (decal.lifeMs / (decal.maxLifeMs || decal.lifeMs))));
+                    const r = decal.radius || 12;
+                    const grd = ctx.createRadialGradient(decal.x, decal.y, 0, decal.x, decal.y, r);
+                    grd.addColorStop(0, `rgba(0,0,0,${0.15 * alpha})`);
+                    grd.addColorStop(0.6, `rgba(40,20,10,${0.11 * alpha})`);
+                    grd.addColorStop(1, `rgba(20,10,8,${0.06 * alpha})`);
+                    ctx.save();
+                    ctx.globalCompositeOperation = "multiply";
+                    ctx.fillStyle = grd;
+                    ctx.beginPath();
+                    ctx.arc(decal.x, decal.y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
         }
 
         // Towers
@@ -211,6 +230,9 @@ export class CanvasRenderer {
 
         // Projectiles
         for (const projectile of gameState.projectiles) this.drawProjectile(projectile);
+
+        // Particles
+        this.drawParticles(gameState);
 
         // Hover preview ring (range outline)
         if (this.hoverPreview && this.configuration.showRangeOnHover) {
@@ -228,39 +250,87 @@ export class CanvasRenderer {
         // Placement ghost
         if (this.placementGhost) this.drawGhostTower(this.placementGhost);
 
-        // Floating combat text
+        // Floating text
         if (Array.isArray(gameState.floatingTexts)) {
             for (const ft of gameState.floatingTexts) this.drawFloatingText(ft);
         }
 
-        // Boss bar
-        const now = performance.now();
-        const boss = gameState.enemies.find(e => e.isBoss);
-        if (boss) this.drawBossTopBar(boss, now);
+        // --- Screen flash overlay (TONED DOWN + ease-out) ---
+        if (gameState.screenFlash && gameState.screenFlash.alpha > 0 && gameState.screenFlash.ttlMs > 0) {
+            // Cap the maximum visual intensity hard (very low)
+            const MAX_ALPHA = 0.20;  // hard upper bound on opacity
+            const ttl = Math.max(0, gameState.screenFlash.ttlMs);
+            const DURATION = 120;    // must match FLASH_TTL in combatSystem
+            const ratio = Math.max(0, Math.min(1, ttl / DURATION));
 
-        // Map Designer overlay (draw LAST so it sits above everything)
-        if (this._mapDesignerPath && this._mapDesignerPath.length) {
-            this.drawMapDesignerOverlay(this._mapDesignerPath);
+            // Ease-out so it fades quickly and gently: easeOutQuad
+            const eased = 1 - (1 - ratio) * (1 - ratio);
+
+            const visualAlpha = Math.min(MAX_ALPHA, (gameState.screenFlash.alpha || 0.16)) * eased;
+
+            if (visualAlpha > 0.001) {
+                ctx.save();
+                ctx.globalAlpha = visualAlpha;
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                ctx.restore();
+            }
+
+            // decay
+            const step = Math.min(50, gameState.screenFlash.ttlMs);
+            gameState.screenFlash.ttlMs = Math.max(0, gameState.screenFlash.ttlMs - step);
+            if (gameState.screenFlash.ttlMs <= 0) {
+                gameState.screenFlash.alpha = 0;
+                gameState.screenFlash.ttlMs = 0;
+            }
+        }
+    }
+
+    /**
+     * Simple particle updater + renderer.
+     * Particles are stored on gameState.particles and can be:
+     *  - { type: 'fragment', x,y,vx,vy,lifeMs,maxLifeMs,size,color }
+     * Particles are updated and expired here.
+     */
+    drawParticles(gameState) {
+        const ctx = this.renderingContext2D;
+        if (!Array.isArray(gameState.particles) || gameState.particles.length === 0) return;
+
+        const now = performance.now();
+        if (!gameState._lastRenderTime) gameState._lastRenderTime = now;
+        const dtMs = Math.max(0, Math.min(100, now - gameState._lastRenderTime));
+        gameState._lastRenderTime = now;
+
+        // Update particle physics & life
+        for (const p of gameState.particles) {
+            p.lifeMs -= dtMs;
+            if (p.type === "fragment") {
+                // simple Euler integration + gravity
+                p.vy += (0.02 * dtMs * 0.06);
+                p.x += p.vx * (dtMs / 16.0);
+                p.y += p.vy * (dtMs / 16.0);
+            }
         }
 
-        // HUD
-        ctx.save();
-        ctx.globalCompositeOperation = "source-over";
-        ctx.globalAlpha = 1;
-        ctx.shadowColor = "transparent";
-        ctx.shadowBlur = 0;
+        // Render visible particles
+        for (const p of gameState.particles) {
+            if (p.lifeMs <= 0) continue;
+            const ageFrac = Math.max(0, Math.min(1, 1 - (p.lifeMs / p.maxLifeMs)));
+            if (p.type === "fragment") {
+                const alpha = Math.max(0, 1 - ageFrac);
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.beginPath();
+                const size = Math.max(1, (p.size || 3) * (1 - ageFrac * 0.8));
+                ctx.fillStyle = p.color || "#ffb24d";
+                ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
 
-        ctx.fillStyle = "rgba(4,7,11,0.6)";
-        ctx.fillRect(8, 8, 220, 80);
-        ctx.fillStyle = "#dbeafe";
-        ctx.font = "14px sans-serif";
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
-        ctx.fillText(`Money: $${gameState.money}`, 16, 28);
-        ctx.fillText(`Lives: ${gameState.lives}`, 16, 48);
-        ctx.fillText(`Wave: ${gameState.currentWaveNumber}/${this.configuration.maximumWaveNumber}`, 16, 68);
-
-        ctx.restore();
+        // Cull dead particles only (decals are handled in the game tick)
+        gameState.particles = gameState.particles.filter(p => p.lifeMs > 0);
     }
 
     drawTower(tower) {

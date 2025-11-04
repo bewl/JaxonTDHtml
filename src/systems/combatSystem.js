@@ -84,6 +84,34 @@ function normalizeAngleRadians(radians) {
     return a;
 }
 
+/**
+ * Normalizes any angle (radians) to the range -PI..PI.
+ * Keeps tower rotation interpolation stable and avoids overshoot.
+ */
+function normalizeAngle(angle) {
+    while (angle > Math.PI) angle -= Math.PI * 2;
+    while (angle < -Math.PI) angle += Math.PI * 2;
+    return angle;
+}
+
+/**
+ * Returns a damage multiplier based on enemy type or resistances.
+ * For now, all damage types deal 1x (no modifier), but you can extend this later.
+ *
+ * @param {EnemyEntity} enemy
+ * @param {string} damageType  e.g. "physical", "fire", "energy"
+ * @returns {number} multiplier (default 1)
+ */
+function typeMultFor(enemy, damageType) {
+    if (!enemy || !damageType) return 1;
+
+    // Example extensibility (uncomment or expand later):
+    // if (enemy.type === 'metal' && damageType === 'fire') return 1.25;
+    // if (enemy.type === 'shielded' && damageType === 'energy') return 0.75;
+
+    return 1;
+}
+
 // -------------------------------------------
 // Combat System
 // -------------------------------------------
@@ -106,18 +134,20 @@ export class CombatSystem {
 
             tower.currentTarget = targetEnemy || null;
 
-            // Smoothly rotate tower toward target
-            if (targetEnemy) {
-                updateTowerFacingTowardsTarget(tower, targetEnemy, deltaSeconds, {
-                    spriteForwardOffsetRadians: 0
-                });
+            // Smoothly rotate tower toward target (if it supports rotation)
+            if (tower.currentTarget && typeof tower.rotationRadians === "number") {
+                const dx = tower.currentTarget.x - tower.x;
+                const dy = tower.currentTarget.y - tower.y;
+                const desired = Math.atan2(dy, dx);
+                // simple lerp toward desired angle
+                const diff = normalizeAngle(desired - tower.rotationRadians);
+                tower.rotationRadians += diff * Math.min(1, deltaSeconds * 8);
             }
 
             // Fire if off cooldown and a valid target exists
             if (tower.cooldownSeconds <= 0 && targetEnemy) {
                 tower.cooldownSeconds = 1 / tower.attacksPerSecond;
 
-                // NEW: carry damageType from tower (defaults to "physical")
                 const dmgType = tower.damageType || "physical";
 
                 gameState.projectiles.push(
@@ -130,24 +160,13 @@ export class CombatSystem {
                         towerTypeKey: tower.towerTypeKey,
                         splash: tower.splash,
                         targetEnemy,
-                        damageType: dmgType, // <<<
+                        damageType: dmgType,
                     })
                 );
             }
         }
 
-        // Precompute global damage multiplier (admin-controlled)
-        const globalDmgMult = Math.max(0, Number(gameState?.modifiers?.towerDamageMultiplier ?? 1));
-
-        // Helper: enemy's per-type damage taken multiplier
-        const typeMultFor = (enemy, dmgType) => {
-            const map = enemy?.damageTypeMultipliers;
-            if (!map) return 1;
-            const v = Number(map[dmgType]);
-            return Number.isFinite(v) ? Math.max(0, v) : 1;
-        };
-
-        // Projectiles resolve
+        // Update projectiles (travel + impact)
         for (const projectile of gameState.projectiles) {
             projectile.travelProgress += deltaSeconds * gameState.configuration.projectileLerpSpeedPerSecond;
             const t = Math.min(projectile.travelProgress, 1);
@@ -157,8 +176,9 @@ export class CombatSystem {
             if (projectile.travelProgress >= 1) {
                 const dmgType = projectile.damageType || "physical";
 
+                // ---------- Splash (AOE) projectiles ----------
                 if (projectile.splash) {
-                    // Splash: apply to all enemies within radius; record actual applied damage
+                    // apply to all enemies within radius; record actual applied damage
                     for (const enemy of gameState.enemies) {
                         if (enemy._isMarkedDead) continue;
                         const distance = Math.hypot(
@@ -168,12 +188,11 @@ export class CombatSystem {
                         if (distance < projectile.splash.radiusPixels) {
                             const before = Math.max(0, enemy.hitPoints);
 
-                            // base * global * enemy per-type
                             const raw = Math.max(
                                 0,
-                                Math.round(projectile.damagePerHit * globalDmgMult * typeMultFor(enemy, dmgType))
+                                Math.round(projectile.damagePerHit * gameState.modifiers.towerDamageMultiplier * typeMultFor(enemy, dmgType))
                             );
-                            const applied = Math.min(raw, before); // clamp for overkill
+                            const applied = Math.min(raw, before); // clamp overkill
 
                             if (applied > 0) {
                                 enemy.hitPoints = before - applied;
@@ -194,14 +213,86 @@ export class CombatSystem {
                             }
                         }
                     }
-                } else if (projectile.targetEnemy && !projectile.targetEnemy._isMarkedDead) {
-                    // Direct hit: record actual applied damage
+
+                    // --- Explosion FX: particles, scorch, screen flash, and knockback ---
+                    const EX_RADIUS = projectile.splash.radiusPixels || 80;
+                    const CENTER_X = projectile._currentX;
+                    const CENTER_Y = projectile._currentY;
+
+                    // Particle intensity scales with radius
+                    const PARTICLE_COUNT = Math.max(20, Math.floor(EX_RADIUS / 2.0));
+
+                    for (let i = 0; i < PARTICLE_COUNT; i += 1) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const speed = (Math.random() * 0.8 + 0.4) * (EX_RADIUS / 40);
+                        const vx = Math.cos(angle) * speed;
+                        const vy = Math.sin(angle) * speed;
+                        const life = 500 + Math.random() * 600; // ms
+                        const size = 2 + Math.random() * 7;
+
+                        // color ramp: bright -> orange -> ember -> smoke
+                        const r = Math.random();
+                        const color = r < 0.12 ? "#fff3b0" : (r < 0.5 ? "#ffb24d" : "#6b2f1b");
+
+                        gameState.particles.push({
+                            type: "fragment",
+                            x: CENTER_X + (Math.random() - 0.5) * 6,
+                            y: CENTER_Y + (Math.random() - 0.5) * 6,
+                            vx, vy,
+                            lifeMs: life,
+                            maxLifeMs: life,
+                            size,
+                            color
+                        });
+                    }
+
+                    // Add a scorch decal (longer lived)
+                    gameState.decals.push({
+                        type: "scorch",
+                        x: CENTER_X,
+                        y: CENTER_Y,
+                        radius: EX_RADIUS * 0.6,
+                        lifeMs: 30000,     // <= total lifetime in ms
+                        maxLifeMs: 30000,  // <= used for fade calculation
+                        alpha: 0.85
+                    });
+
+                    // Screen flash (TONED DOWN)
+                    // Much smaller alpha and shorter TTL
+                    const FLASH_ALPHA = 0.16; // was ~0.95
+                    const FLASH_TTL = 120;  // ms, was ~360
+                    gameState.screenFlash.alpha = Math.max(gameState.screenFlash.alpha || 0, FLASH_ALPHA);
+                    gameState.screenFlash.ttlMs = Math.max(gameState.screenFlash.ttlMs || 0, FLASH_TTL);
+
+                    // Knockback: immediate positional displacement proportional to falloff
+                    const MAX_KNOCKBACK = Math.max(10, Math.min(80, Math.floor(EX_RADIUS * 0.35))); // px
+                    for (const enemy of gameState.enemies) {
+                        if (enemy._isMarkedDead) continue;
+                        const dx = enemy.x - CENTER_X;
+                        const dy = enemy.y - CENTER_Y;
+                        const dist = Math.hypot(dx, dy);
+                        if (dist === 0) {
+                            const ang = Math.random() * Math.PI * 2;
+                            enemy.x += Math.cos(ang) * (MAX_KNOCKBACK * 0.25);
+                            enemy.y += Math.sin(ang) * (MAX_KNOCKBACK * 0.25);
+                        } else if (dist < EX_RADIUS) {
+                            const falloff = 1 - (dist / EX_RADIUS); // 1 at center, 0 at edge
+                            const impulse = MAX_KNOCKBACK * falloff;
+                            const nx = dx / dist;
+                            const ny = dy / dist;
+                            enemy.x += nx * impulse;
+                            enemy.y += ny * impulse;
+                        }
+                    }
+                }
+                // ---------- Direct / non-splash projectiles ----------
+                else if (projectile.targetEnemy && !projectile.targetEnemy._isMarkedDead) {
                     const enemy = projectile.targetEnemy;
                     const before = Math.max(0, enemy.hitPoints);
 
                     const raw = Math.max(
                         0,
-                        Math.round(projectile.damagePerHit * globalDmgMult * typeMultFor(enemy, dmgType))
+                        Math.round(projectile.damagePerHit * gameState.modifiers.towerDamageMultiplier * typeMultFor(enemy, dmgType))
                     );
                     const applied = Math.min(raw, before);
 
@@ -210,7 +301,6 @@ export class CombatSystem {
                         enemy._lastHitTimestamp = performance.now();
                         enemy._lastDamageAmount = applied;
 
-                        // Floating damage text
                         gameState.floatingTexts.push(
                             new FloatingText({
                                 x: enemy.x,
@@ -223,11 +313,21 @@ export class CombatSystem {
                         );
                     }
                 }
+
                 projectile._isComplete = true;
             }
         }
 
-        // Cleanup phase
+        // -------- Decals fade/down & cleanup (deterministic per tick) --------
+        if (Array.isArray(gameState.decals) && gameState.decals.length) {
+            const decayMs = Math.max(0, Math.floor(deltaSeconds * 1000));
+            for (const d of gameState.decals) {
+                if (typeof d.lifeMs === "number") d.lifeMs = Math.max(0, d.lifeMs - decayMs);
+            }
+            gameState.decals = gameState.decals.filter(d => (typeof d.lifeMs !== "number") || d.lifeMs > 0);
+        }
+
+        // Enemies cleanup & rewards
         gameState.enemies = gameState.enemies.filter((enemy) => {
             if (enemy.hitPoints <= 0) {
                 gameState.money += enemy.rewardMoney;
@@ -236,8 +336,7 @@ export class CombatSystem {
             return !enemy._isMarkedDead;
         });
 
+        // Projectiles cleanup
         gameState.projectiles = gameState.projectiles.filter((p) => !p._isComplete);
     }
-
-
 }

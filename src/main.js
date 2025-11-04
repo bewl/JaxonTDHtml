@@ -188,6 +188,18 @@ const gameState = {
     towers: [],
     projectiles: [],
     floatingTexts: [],
+
+    // Particles & visual FX (new)
+    // - particles: short-lived visual fragments (explosion debris / embers)
+    // - decals: longer-lived static marks (scorch)
+    // - screenFlash: used to show a quick white flash on big explosions
+    particles: [],       // array of { type: 'fragment'|'scorch', x, y, vx, vy, lifeMs, maxLifeMs, size, color, ... }
+    decals: [],          // array of long life persistent decals (scorch marks), rendered beneath entities
+    screenFlash: {       // simple one-shot screen flash: { alpha: 0..1, ttlMs }
+        alpha: 0,
+        ttlMs: 0
+    },
+
     // Admin / runtime modifiers
     modifiers: {
         towerDamageMultiplier: 1, // <= Admin panel will change this
