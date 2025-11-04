@@ -243,7 +243,7 @@ function applyAftershockImpact(gameState, projectile, cfg, aoeRadius) {
     const flashTtl = cfg.flashTtl ?? 90;
 
     const rippleCfg = cfg.ripple || {};
-    const rippleEnabled = rippleCfg.enabled !== false; // default on
+    const rippleEnabled = rippleCfg.enabled !== false;
     const rippleStart = Math.max(2, rippleCfg.startRadius ?? Math.min(14, Math.floor(radius * 0.18)));
     const rippleEnd = Math.max(rippleStart + 2, rippleCfg.endRadius ?? Math.floor(radius * 1.1));
     const rippleDurationMs = Math.max(120, rippleCfg.durationMs ?? 520);
@@ -274,9 +274,9 @@ function applyAftershockImpact(gameState, projectile, cfg, aoeRadius) {
         } : null,
         dueAt: performance.now() + delayMs
     };
+
     (gameState.scheduledEffects ||= []).push(entry);
 }
-
 
 export const EffectsRegistry = {
     applyTravel(gameState, projectile, deltaSeconds) {

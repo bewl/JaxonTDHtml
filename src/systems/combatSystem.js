@@ -190,7 +190,6 @@ export class CombatSystem {
 
             if (projectile.travelProgress >= 1) {
                 const dmgType = projectile.damageType || "physical";
-
                 const AOE_RADIUS =
                     (projectile.aoe && projectile.aoe.radiusPixels) ||
                     (projectile.splash && projectile.splash.radiusPixels) ||
@@ -199,20 +198,14 @@ export class CombatSystem {
                 if (AOE_RADIUS > 0) {
                     for (const enemy of gameState.enemies) {
                         if (enemy._isMarkedDead) continue;
-                        const distance = Math.hypot(
-                            enemy.x - projectile._currentX,
-                            enemy.y - projectile._currentY
-                        );
+                        const distance = Math.hypot(enemy.x - projectile._currentX, enemy.y - projectile._currentY);
                         if (distance < AOE_RADIUS) {
                             const before = Math.max(0, enemy.hitPoints);
-                            const raw = Math.max(
-                                0,
-                                Math.round(
-                                    projectile.damagePerHit *
-                                    gameState.modifiers.towerDamageMultiplier *
-                                    typeMultFor(enemy, dmgType)
-                                )
-                            );
+                            const raw = Math.max(0, Math.round(
+                                projectile.damagePerHit *
+                                gameState.modifiers.towerDamageMultiplier *
+                                typeMultFor(enemy, dmgType)
+                            ));
                             const falloff = 1 - (distance / AOE_RADIUS);
                             const applied = Math.min(before, Math.round(raw * falloff));
                             if (applied > 0) {
@@ -236,14 +229,11 @@ export class CombatSystem {
                 } else if (projectile.targetEnemy && !projectile.targetEnemy._isMarkedDead) {
                     const enemy = projectile.targetEnemy;
                     const before = Math.max(0, enemy.hitPoints);
-                    const raw = Math.max(
-                        0,
-                        Math.round(
-                            projectile.damagePerHit *
-                            gameState.modifiers.towerDamageMultiplier *
-                            typeMultFor(enemy, dmgType)
-                        )
-                    );
+                    const raw = Math.max(0, Math.round(
+                        projectile.damagePerHit *
+                        gameState.modifiers.towerDamageMultiplier *
+                        typeMultFor(enemy, dmgType)
+                    ));
                     const applied = Math.min(raw, before);
                     if (applied > 0) {
                         enemy.hitPoints = before - applied;
@@ -347,18 +337,17 @@ export class CombatSystem {
                     }
 
                     if (e.ripple) {
-                        const r = e.ripple;
                         (gameState.ripples ||= []).push({
                             x: e.x,
                             y: e.y,
-                            startRadius: r.startRadius,
-                            endRadius: r.endRadius,
-                            durationMs: r.durationMs,
-                            coreWidth: r.coreWidth,
-                            glowWidth: r.glowWidth,
-                            coreColor: r.coreColor,
-                            glowColor: r.glowColor,
-                            alpha: r.alpha,
+                            startRadius: e.ripple.startRadius,
+                            endRadius: e.ripple.endRadius,
+                            durationMs: e.ripple.durationMs,
+                            coreWidth: e.ripple.coreWidth,
+                            glowWidth: e.ripple.glowWidth,
+                            coreColor: e.ripple.coreColor,
+                            glowColor: e.ripple.glowColor,
+                            alpha: e.ripple.alpha,
                             createdAt: now
                         });
                     }
@@ -382,4 +371,5 @@ export class CombatSystem {
             enemy._prevY = enemy.y;
         }
     }
+
 }

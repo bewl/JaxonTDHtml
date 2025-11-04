@@ -123,18 +123,66 @@ export const GAME_CONFIG = {
             baseRadiusPixels: 12,
             damageType: "physical",
             aoe: { radiusPixels: 70 },
+
+            // Start with NO aftershock/ripple by default.
+            // (You can keep a mild explosion if you want a baseline visual)
             projectileEffects: {
-                explosion: { enabled: true, flashAlpha: 0.09, flashTtl: 120 },
-                aftershock: {
-                    enabled: true,
-                    delayMs: 600,
-                    radiusPixelsOverride: 90,
-                    damageMultiplier: 0.6,
-                    flashAlpha: 0.03,
-                    flashTtl: 100
+                explosion: { enabled: true, flashAlpha: 0.07, flashTtl: 100 }
+            },
+
+            upgrades: {
+                damage: {
+                    displayName: "Seismic Charge",
+                    levels: [
+                        { cost: 100, multiplier: { damagePerShot: 1.3 } },
+                        { cost: 200, multiplier: { damagePerShot: 1.6 } },
+                        { cost: 400, multiplier: { damagePerShot: 2.0 } }
+                    ]
+                },
+                range: {
+                    displayName: "Epicenter Expansion",
+                    levels: [
+                        { cost: 120, multiplier: { attackRangePixels: 1.2 } },
+                        { cost: 220, multiplier: { attackRangePixels: 1.5 } }
+                    ]
+                },
+                shockwave: {
+                    displayName: "Groundbreaker",
+                    levels: [
+                        {
+                            cost: 300,
+                            // Unlock AFTERSHOCK + RIPPLE together.
+                            // Deep-merge in TowerUpgradeSystem.applyUpgrade keeps existing effects.
+                            unlocksEffect: {
+                                projectileEffects: {
+                                    aftershock: {
+                                        enabled: true,
+                                        delayMs: 600,
+                                        radiusPixelsOverride: 90,
+                                        damageMultiplier: 0.6,
+                                        flashAlpha: 0.06,
+                                        flashTtl: 100,
+                                        ripple: {
+                                            enabled: true,
+                                            startRadius: 18,
+                                            endRadius: 160,
+                                            durationMs: 650,
+                                            coreWidth: 3,
+                                            glowWidth: 10,
+                                            coreColor: "#fde68a",
+                                            glowColor: "#fbbf24",
+                                            alpha: 0.6
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    ]
                 }
             }
         }
+
+
     },
     ui: {
         bossBar: {

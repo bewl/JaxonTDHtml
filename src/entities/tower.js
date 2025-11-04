@@ -10,22 +10,23 @@ export class TowerEntity {
 
         this.splash = definition.splash ? { ...definition.splash } : null;
 
-        // NEW: footprint size in cells (square footprint: sizeCells x sizeCells)
         this.sizeCells = Math.max(1, Math.floor(Number(definition.sizeCells ?? 1)));
         this.visualScale = Number.isFinite(definition.visualScale) ? definition.visualScale : 1;
 
-        this.x = pixelX;            // pixel center of the footprint
+        this.x = pixelX;
         this.y = pixelY;
-        this.gridX = gridX;         // top-left cell of the footprint
+        this.gridX = gridX;
         this.gridY = gridY;
 
         this.towerTypeKey = towerTypeKey;
 
-        // Firing state
         this.cooldownSeconds = 0;
-
-        // Optional: aiming/rotation
         this.rotationRadians = 0;
         this.currentTarget = null;
+
+        // Guarantee an upgrade state object so the tooltip always has something to read.
+        this.upgradeState = (definition.defaultUpgradeState && typeof definition.defaultUpgradeState === "object")
+            ? { ...definition.defaultUpgradeState }
+            : {};
     }
 }

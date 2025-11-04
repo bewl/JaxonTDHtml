@@ -219,6 +219,23 @@ export class CanvasRenderer {
         }
 
         for (const tower of gameState.towers) this.drawTower(tower);
+
+        if (gameState.selectedTower) {
+            const t = gameState.selectedTower;
+            const base = (typeof t.baseRadiusPixels === "number" ? t.baseRadiusPixels : 12);
+            const scale = (typeof t.visualScale === "number" ? t.visualScale : 1);
+            const r = base * scale + 10;
+
+            ctx.save();
+            ctx.setLineDash([5, 4]);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "rgba(147, 197, 253, 0.95)";
+            ctx.beginPath();
+            ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
         for (const enemy of gameState.enemies) this.drawEnemy(enemy);
         for (const projectile of gameState.projectiles) this.drawProjectile(projectile);
 
@@ -364,54 +381,6 @@ export class CanvasRenderer {
         ctx.restore();
     }
 
-
-
-    /**
-     * Simple particle updater + renderer.
-     * Particles are stored on gameState.particles and can be:
-     *  - { type: 'fragment', x,y,vx,vy,lifeMs,maxLifeMs,size,color }
-     * Particles are updated and expired here.
-     */
-    drawParticles(gameState) {
-        const ctx = this.renderingContext2D;
-        if (!Array.isArray(gameState.particles) || gameState.particles.length === 0) return;
-
-        const now = performance.now();
-        if (!gameState._lastRenderTime) gameState._lastRenderTime = now;
-        const dtMs = Math.max(0, Math.min(100, now - gameState._lastRenderTime));
-        gameState._lastRenderTime = now;
-
-        // Update particle physics & life
-        for (const p of gameState.particles) {
-            p.lifeMs -= dtMs;
-            if (p.type === "fragment") {
-                // simple Euler integration + gravity
-                p.vy += (0.02 * dtMs * 0.06);
-                p.x += p.vx * (dtMs / 16.0);
-                p.y += p.vy * (dtMs / 16.0);
-            }
-        }
-
-        // Render visible particles
-        for (const p of gameState.particles) {
-            if (p.lifeMs <= 0) continue;
-            const ageFrac = Math.max(0, Math.min(1, 1 - (p.lifeMs / p.maxLifeMs)));
-            if (p.type === "fragment") {
-                const alpha = Math.max(0, 1 - ageFrac);
-                ctx.save();
-                ctx.globalAlpha = alpha;
-                ctx.beginPath();
-                const size = Math.max(1, (p.size || 3) * (1 - ageFrac * 0.8));
-                ctx.fillStyle = p.color || "#ffb24d";
-                ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            }
-        }
-
-        // Cull dead particles only (decals are handled in the game tick)
-        gameState.particles = gameState.particles.filter(p => p.lifeMs > 0);
-    }
 
     drawTower(tower) {
         const ctx = this.renderingContext2D;

@@ -28,6 +28,9 @@ import { createAdminPanel } from "./ui/adminPanel.js";
 import { FloatingTextSystem } from "./systems/floatingTextSystem.js";
 import { FloatingText } from "./entities/floatingText.js"; // only if you need to spawn from UI later
 
+import { showTowerUpgrades, clearTowerUpgrades } from "./ui/towerUpgradePanel.js";
+import { installTowerSelection } from "./ui/towerSelection.js";
+
 // ===========================================
 // Responsive Canvas and Auto-Grid Helpers
 // ===========================================
@@ -225,6 +228,8 @@ const gameState = {
     },
 };
 
+installTowerSelection(document.getElementById("gameCanvas"), gameState);
+
 
 // Create map and renderer (grid will be recomputed in initialize())
 gameState.gridMap = new GridMap(configuration, gameCanvas);
@@ -337,13 +342,13 @@ function tryPlaceSelectedTowerAtCell(gridX, gridY) {
     gameState.towers.push(tower);
     lastPlacedTower = tower;
 
+    // NEW: show upgrades for the newly placed tower
+    showTowerUpgrades(tower, gameState);
+
     updateTowerButtonsDisableState(gameState);
     refreshStatsPanel(userInterface, gameState, configuration);
     return true;
 }
-
-
-
 
 buildTowerButtonsFromConfig(userInterface, configuration, selectTowerType);
 
@@ -660,58 +665,86 @@ function getCanvasBoundingClientRect() {
 
 function showTowerTooltip(userInterface, tower, mouseClientX, mouseClientY) {
     const tooltipElement = userInterface.towerInfoTooltip;
-    if (!tooltipElement) return;
+    if (!tooltipElement || !tower) return;
 
-    // --- Stats to display ---
+    // Resolve config (be robust about where it’s hanging off of)
+    const cfgRoot =
+        (typeof configuration !== "undefined" && configuration) ? configuration :
+            (gameState && gameState.configuration) ? gameState.configuration :
+                (typeof window !== "undefined" && window.GAME_CONFIG) ? window.GAME_CONFIG :
+                    null;
+
+    const towersCfg = cfgRoot?.towersByTypeKey || {};
+    const towerCfg = towersCfg[tower.towerTypeKey] || null;
+
     const attacksPerSecond = Number(tower.attacksPerSecond ?? 0);
     const baseDamagePerShot = Number(tower.damagePerShot ?? 0);
     const attackRangePixels = Number(tower.attackRangePixels ?? 0);
     const buildCost = Number(tower.buildCost ?? 0);
 
-    // Global damage multiplier from admin modifiers (defaults to 1)
     const globalMult = Math.max(0, Number(gameState?.modifiers?.towerDamageMultiplier ?? 1));
     const effectiveDamagePerShot = Math.max(0, Math.round(baseDamagePerShot * globalMult));
 
     const splashRadius =
-        tower?.splash && Number.isFinite(tower.splash.radiusPixels)
+        tower?.splash &&
+            typeof tower.splash === "object" &&
+            Number.isFinite(tower.splash.radiusPixels)
             ? Number(tower.splash.radiusPixels)
             : null;
 
-    tooltipElement.innerHTML = `
-    <div class="titleRow" style="color:${tower.uiColor}">
-      <span class="colorSwatch" style="color:${tower.uiColor}; background:${tower.uiColor}"></span>
-      <span>${tower.displayName}</span>
-    </div>
-    <div class="statRow">
-      <span class="label">Type</span><span>${tower.towerTypeKey}</span>
-    </div>
-    <div class="statRow">
-      <span class="label">Damage / Shot</span>
-      <span>${baseDamagePerShot} <span style="color:#9fb3c8;">(${effectiveDamagePerShot})</span></span>
-    </div>
-    <div class="statRow">
-      <span class="label">Damage Type</span><span>${tower.damageType || "physical"}</span>
-    </div>
-    <div class="statRow">
-      <span class="label">Attacks / Sec</span><span>${attacksPerSecond.toFixed(2)}</span>
-    </div>
-    <div class="statRow">
-      <span class="label">Range (px)</span><span>${attackRangePixels}</span>
-    </div>
-    ${splashRadius !== null ? `
-    <div class="statRow">
-      <span class="label">Splash (px)</span><span>${splashRadius}</span>
-    </div>` : ``}
-    <div class="statRow">
-      <span class="label">Build Cost</span><span>$${buildCost}</span>
-    </div>
-    ${globalMult !== 1 ? `
-    <div class="statRow">
-      <span class="label">Global Dmg Mult</span><span>x${Number(globalMult).toFixed(2)}</span>
-    </div>` : ``}
-  `;
+    // Build upgrades block if the config actually defines any
+    let upgradesHtml = "";
+    const upgrades = towerCfg?.upgrades;
+    if (upgrades && typeof upgrades === "object" && Object.keys(upgrades).length > 0) {
+        const rows = [];
+        for (const [key, path] of Object.entries(upgrades)) {
+            const level = Number(tower?.upgradeState?.[key] ?? 0);
+            const max = Array.isArray(path?.levels) ? path.levels.length : 0;
+            const name = path?.displayName || key;
+            rows.push(`<div class="statRow"><span class="label">${name}</span><span>Lv ${level}/${max}</span></div>`);
+        }
+        if (rows.length) {
+            upgradesHtml = `
+            <div class="statRow"><span class="label" style="opacity:0.8">Upgrades</span><span></span></div>
+            ${rows.join("")}`;
+        }
+    }
 
-    // Show + position (CSS uses .visible to fade in)
+    tooltipElement.innerHTML = `
+      <div class="titleRow" style="color:${tower.uiColor}">
+        <span class="colorSwatch" style="color:${tower.uiColor}; background:${tower.uiColor}"></span>
+        <span>${tower.displayName}</span>
+      </div>
+      <div class="statRow">
+        <span class="label">Type</span><span>${tower.towerTypeKey}</span>
+      </div>
+      <div class="statRow">
+        <span class="label">Damage / Shot</span>
+        <span>${baseDamagePerShot} <span style="color:#9fb3c8;">(${effectiveDamagePerShot})</span></span>
+      </div>
+      <div class="statRow">
+        <span class="label">Damage Type</span><span>${tower.damageType || "physical"}</span>
+      </div>
+      <div class="statRow">
+        <span class="label">Attacks / Sec</span><span>${attacksPerSecond.toFixed(2)}</span>
+      </div>
+      <div class="statRow">
+        <span class="label">Range (px)</span><span>${attackRangePixels}</span>
+      </div>
+      ${splashRadius !== null ? `
+      <div class="statRow">
+        <span class="label">Splash (px)</span><span>${splashRadius}</span>
+      </div>` : ``}
+      <div class="statRow">
+        <span class="label">Build Cost</span><span>$${buildCost}</span>
+      </div>
+      ${globalMult !== 1 ? `
+      <div class="statRow">
+        <span class="label">Global Dmg Mult</span><span>x${Number(globalMult).toFixed(2)}</span>
+      </div>` : ``}
+      ${upgradesHtml}
+    `;
+
     tooltipElement.style.display = "block";
     tooltipElement.classList.add("visible");
 
@@ -720,7 +753,6 @@ function showTowerTooltip(userInterface, tower, mouseClientX, mouseClientY) {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
-    // Reset to measure
     tooltipElement.style.left = "0px";
     tooltipElement.style.top = "0px";
     const rect = tooltipElement.getBoundingClientRect();
@@ -733,30 +765,31 @@ function showTowerTooltip(userInterface, tower, mouseClientX, mouseClientY) {
 }
 
 
-
 function hideTowerTooltip(userInterface) {
     const tooltipElement = userInterface.towerInfoTooltip;
     if (!tooltipElement) return;
-
-    // Fade out (CSS handles opacity); then display:none after transition
     tooltipElement.classList.remove("visible");
-
-    // Optional: wait for transition before fully hiding
-    // Keep it simple/robust if transitions are disabled:
     tooltipElement.style.display = "none";
 }
 
 function findTowerUnderPointer(gameState, mouseX, mouseY) {
-    const pickRadiusPixels = 14;
+    let best = null;
+    let bestDistSq = Infinity;
+
     for (let i = gameState.towers.length - 1; i >= 0; i -= 1) {
         const tower = gameState.towers[i];
+        const base = Number.isFinite(tower.baseRadiusPixels) ? tower.baseRadiusPixels : 12;
+        const scale = Number.isFinite(tower.visualScale) ? tower.visualScale : 1;
+        const r = base * scale + 10;
         const dx = mouseX - tower.x;
         const dy = mouseY - tower.y;
-        if (dx * dx + dy * dy <= pickRadiusPixels * pickRadiusPixels) {
-            return tower;
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= r * r && d2 < bestDistSq) {
+            best = tower;
+            bestDistSq = d2;
         }
     }
-    return null;
+    return best;
 }
 
 /**
