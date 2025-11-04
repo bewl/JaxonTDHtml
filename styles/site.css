@@ -495,3 +495,78 @@ input[type="number"] {
         top: 0;
     }
 }
+
+/* ============= Map Designer disabled visuals ============= */
+.admin-panel .is-disabled {
+    opacity: 0.45;
+    filter: grayscale(100%);
+    cursor: not-allowed !important;
+    pointer-events: none; /* prevents accidental clicks */
+}
+
+/* Buttons that are actually disabled via attribute, too */
+.admin-panel .admin-btn[disabled],
+.admin-panel .admin-input[disabled],
+.admin-panel input[type="radio"][disabled],
+.admin-panel input[type="checkbox"][disabled],
+.admin-panel select[disabled],
+.admin-panel textarea[disabled] {
+    opacity: 0.45;
+    filter: grayscale(100%);
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* Optional: subtle “disabled” background so it reads as inactive */
+.admin-panel .admin-btn[disabled],
+.admin-panel .admin-btn.is-disabled {
+    background: #0a1a29;
+    border-color: rgba(255,255,255,0.05);
+    box-shadow: none;
+}
+
+/* Optional: inputs look dim when disabled */
+.admin-panel .admin-input[disabled],
+.admin-panel textarea[disabled],
+.admin-panel select[disabled] {
+    background: #081625;
+    border-color: rgba(255,255,255,0.05);
+}
+
+/* Optional: tool radios/labels show disabled state too */
+.admin-panel .md-tool-label.is-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* === Map Designer: Enable Editor glow when active === */
+#md_enable.md-active,
+#md_enable[data-active="1"] {
+    border-color: rgba(99, 102, 241, 0.6);             /* indigo-ish */
+    background: linear-gradient(180deg, #1a2140 0%, #151c33 100%);
+    box-shadow:
+        0 0 0 2px rgba(10, 15, 26, 0.9),
+        0 0 0 4px rgba(99, 102, 241, 0.35),
+        0 8px 28px rgba(99, 102, 241, 0.25);
+    transform: translateZ(0);
+}
+
+/* tasteful pulse while active */
+@keyframes mdGlowPulse {
+    0%, 100% { box-shadow:
+        0 0 0 2px rgba(10, 15, 26, 0.9),
+        0 0 0 4px rgba(99, 102, 241, 0.35),
+        0 8px 28px rgba(99, 102, 241, 0.25);
+    }
+    50% { box-shadow:
+        0 0 0 2px rgba(10, 15, 26, 0.9),
+        0 0 0 5px rgba(129, 140, 248, 0.45),
+        0 10px 34px rgba(129, 140, 248, 0.30);
+    }
+}
+
+#md_enable.md-active,
+#md_enable[data-active="1"] {
+    animation: mdGlowPulse 1.8s ease-in-out infinite;
+}
+

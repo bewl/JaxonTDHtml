@@ -32,6 +32,8 @@ export class CanvasRenderer {
         // - when in placement mode: show ghost tower + range ring at the hovered grid cell
         this.hoverPreview = null;     // { x, y, radiusPixels, strokeColor }
         this.placementGhost = null;   // { x, y, uiColor, towerTypeKey }
+        this._mapDesignerPath = null; // map designer overlay (array of {x,y} or null)
+        this._hideBasePathWhileEditing = false;
     }
 
     /**
@@ -48,6 +50,22 @@ export class CanvasRenderer {
      */
     setPlacementGhost(ghost) {
         this.placementGhost = ghost;
+    }
+
+    /**
+     * Provide a path of grid cells for the map designer overlay, or null to clear.
+     * @param {{x:number,y:number}[]|null} cells
+     */
+    setMapDesignerOverlay(cells) {
+        this._mapDesignerPath = Array.isArray(cells) ? cells : null;
+    }
+
+    /**
+     * When true, the renderer won't draw the base (configured) path;
+     * you'll see only the editor overlay if present.
+    */
+    setHideBasePathWhileEditing(hide) {
+        this._hideBasePathWhileEditing = !!hide;
     }
 
     drawBossTopBar(boss, now) {
@@ -153,26 +171,37 @@ export class CanvasRenderer {
         const ctx = this.renderingContext2D;
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
+        // ----- SAFE base-path checks -----
+        const showBasePath = !this._hideBasePathWhileEditing;
+        const waypoints = (this.gridMap && Array.isArray(this.gridMap.waypoints)) ? this.gridMap.waypoints : [];
+        const hasDrawablePath = showBasePath && waypoints.length >= 2;
+
         // Grid
         for (let gridX = 0; gridX < this.gridMap.gridColumnCount; gridX += 1) {
             for (let gridY = 0; gridY < this.gridMap.gridRowCount; gridY += 1) {
                 const cellX = gridX * this.gridMap.gridCellSize;
                 const cellY = gridY * this.gridMap.gridCellSize;
-                ctx.fillStyle = this.gridMap.isGridCellOnPath(gridX, gridY)
-                    ? "#17202b"
-                    : "rgba(255,255,255,0.02)";
+
+                // Only ask the grid if a cell is on the path when we actually have one to show
+                const isPathCell = hasDrawablePath && this.gridMap.isGridCellOnPath(gridX, gridY);
+                ctx.fillStyle = isPathCell ? "#17202b" : "rgba(255,255,255,0.02)";
                 ctx.fillRect(cellX, cellY, this.gridMap.gridCellSize - 1, this.gridMap.gridCellSize - 1);
             }
         }
 
-        // Path stroke
-        ctx.beginPath();
-        ctx.lineWidth = 20;
-        ctx.lineCap = "round";
-        ctx.strokeStyle = "#2c566f";
-        ctx.moveTo(this.gridMap.waypoints[0].x, this.gridMap.waypoints[0].y);
-        for (const waypoint of this.gridMap.waypoints) ctx.lineTo(waypoint.x, waypoint.y);
-        ctx.stroke();
+        // Path stroke (only if we have ≥2 waypoints)
+        if (hasDrawablePath) {
+            ctx.beginPath();
+            ctx.lineWidth = 20;
+            ctx.lineCap = "round";
+            ctx.strokeStyle = "#2c566f";
+            ctx.moveTo(waypoints[0].x, waypoints[0].y);
+            for (let i = 1; i < waypoints.length; i += 1) {
+                const wp = waypoints[i];
+                ctx.lineTo(wp.x, wp.y);
+            }
+            ctx.stroke();
+        }
 
         // Towers
         for (const tower of gameState.towers) this.drawTower(tower);
@@ -186,12 +215,9 @@ export class CanvasRenderer {
         // Hover preview ring (range outline)
         if (this.hoverPreview && this.configuration.showRangeOnHover) {
             const { x, y, radiusPixels, strokeColor } = this.hoverPreview;
-
             ctx.save();
             ctx.beginPath();
             ctx.arc(x, y, radiusPixels, 0, Math.PI * 2);
-
-            // Use the given color with translucency
             ctx.strokeStyle = strokeColor || "rgba(100,200,100,0.8)";
             ctx.globalAlpha = 0.3;
             ctx.lineWidth = 3;
@@ -199,26 +225,25 @@ export class CanvasRenderer {
             ctx.restore();
         }
 
-        // Placement ghost (semi-transparent tower body while aiming)
-        if (this.placementGhost) {
-            this.drawGhostTower(this.placementGhost);
-        }
+        // Placement ghost
+        if (this.placementGhost) this.drawGhostTower(this.placementGhost);
 
-        // Floating combat text (draw above enemies/projectiles, below HUD)
+        // Floating combat text
         if (Array.isArray(gameState.floatingTexts)) {
             for (const ft of gameState.floatingTexts) this.drawFloatingText(ft);
         }
 
-        // (after drawing grid, path, towers, enemies, projectiles)
+        // Boss bar
         const now = performance.now();
-
-        // Big top-of-screen boss bar (if a boss exists) — draw BEFORE HUD
         const boss = gameState.enemies.find(e => e.isBoss);
-        if (boss) {
-            this.drawBossTopBar(boss, now);
+        if (boss) this.drawBossTopBar(boss, now);
+
+        // Map Designer overlay (draw LAST so it sits above everything)
+        if (this._mapDesignerPath && this._mapDesignerPath.length) {
+            this.drawMapDesignerOverlay(this._mapDesignerPath);
         }
 
-        // === HUD (draw LAST so it never gets covered) ===
+        // HUD
         ctx.save();
         ctx.globalCompositeOperation = "source-over";
         ctx.globalAlpha = 1;
@@ -237,7 +262,6 @@ export class CanvasRenderer {
 
         ctx.restore();
     }
-
 
     drawTower(tower) {
         const ctx = this.renderingContext2D;
@@ -409,4 +433,108 @@ export class CanvasRenderer {
         ctx.restore();
     }
 
+    drawMapDesignerOverlay(cells) {
+        const ctx = this.renderingContext2D;
+        const size = this.gridMap.gridCellSize;
+
+        ctx.save();
+
+        // Slight dim overlay so edited cells pop
+        ctx.fillStyle = "rgba(0,0,0,0.15)";
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+        // Draw working path cells
+        ctx.lineWidth = 2;
+        for (const c of cells) {
+            const x = c.x * size;
+            const y = c.y * size;
+
+            // cell fill
+            ctx.fillStyle = "rgba(56, 189, 248, 0.25)"; // cyan-ish
+            ctx.fillRect(x, y, size - 1, size - 1);
+
+            // outline
+            ctx.strokeStyle = "rgba(56, 189, 248, 0.9)";
+            ctx.strokeRect(x + 0.5, y + 0.5, size - 2, size - 2);
+        }
+
+        // Legend chip
+        ctx.font = "12px system-ui, Segoe UI, Roboto, Arial";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        const boxW = 180, boxH = 54;
+        ctx.fillRect(10, 10, boxW, boxH);
+        ctx.fillStyle = "#dbeafe";
+        ctx.fillText("Map Designer (drag to paint)", 16, 16);
+        ctx.fillText("Left-drag: add / erase (tool)", 16, 32);
+
+        ctx.restore();
+    }
+
+    /**
+ * Renders an overlay for the in-editor path:
+ *  - fills each selected grid cell with a subtle tint
+ *  - draws a polyline through cell centers (in array order)
+ */
+    drawMapDesignerOverlay(cells) {
+        const ctx = this.renderingContext2D;
+        const size = this.gridMap.gridCellSize;
+
+        ctx.save();
+
+        // 1) Fill selected cells (subtle cyan tint)
+        ctx.globalAlpha = 0.28;
+        ctx.fillStyle = "#22d3ee"; // cyan
+        for (const c of cells) {
+            const x = c.x * size;
+            const y = c.y * size;
+            ctx.fillRect(x, y, size, size);
+        }
+
+        // 2) Outline cells lightly for precision
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = "rgba(34, 211, 238, 0.7)";
+        ctx.lineWidth = 1;
+        for (const c of cells) {
+            const x = c.x * size + 0.5;
+            const y = c.y * size + 0.5;
+            ctx.strokeRect(x, y, size - 1, size - 1);
+        }
+
+        // 3) Path polyline (through cell centers, order = array order)
+        if (cells.length >= 2) {
+            ctx.globalAlpha = 0.9;
+            ctx.strokeStyle = "#67e8f9"; // lighter cyan
+            ctx.lineWidth = 3;
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+
+            ctx.beginPath();
+            const c0 = cells[0];
+            ctx.moveTo(c0.x * size + size / 2, c0.y * size + size / 2);
+            for (let i = 1; i < cells.length; i += 1) {
+                const ci = cells[i];
+                ctx.lineTo(ci.x * size + size / 2, ci.y * size + size / 2);
+            }
+            ctx.stroke();
+
+            // 4) Endpoints markers
+            const start = cells[0];
+            const end = cells[cells.length - 1];
+            const r = 4;
+
+            ctx.fillStyle = "#22d3ee";
+            ctx.beginPath();
+            ctx.arc(start.x * size + size / 2, start.y * size + size / 2, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = "#06b6d4";
+            ctx.beginPath();
+            ctx.arc(end.x * size + size / 2, end.y * size + size / 2, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
 }

@@ -34,7 +34,14 @@ function createEl(tag, attrs = {}, children = []) {
 }
 
 export function createAdminPanel(rootDocument, gameState, configuration, uiHooks = {}) {
-    const { rebuildTowerButtons, selectTowerType } = uiHooks;
+    const {
+        rebuildTowerButtons = null,
+        selectTowerType = null,
+        mapDesignerHooks = null, // ✅ include it properly here
+    } = uiHooks;
+
+    // Cache a local reference so handlers don't try to use a global
+    const MD = mapDesignerHooks;
 
     // ------- Damage Types (from config or fallback) -------
     const DAMAGE_TYPES = Array.isArray(configuration?.damageTypes) && configuration.damageTypes.length
@@ -55,6 +62,14 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
 
     panel.append(header, tabsBar, contentHost);
     rootDocument.body.appendChild(panel);
+
+    setMapDesignerUiEnabled(false);
+
+    const mdToggle = q("#md_enable");
+    if (mdToggle) {
+        mdToggle.dataset.active = "0";
+        mdToggle.textContent = "Enable Editing";
+    }
 
     // ====== Section Registry (extensible) ======
     const sections = [];                          // { id, title, buttonEl, render, mountOnce }
@@ -93,6 +108,39 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         const el = section.render();
         if (el) contentHost.appendChild(el);
     }
+
+    function setMapDesignerUiEnabled(isEnabled) {
+        // Add any selectors you use for your MD controls here:
+        const selectors = [
+            "#md_clear",
+            "#md_commit",
+            "#md_startBlank",
+            "#md_export",
+            "#md_import",
+            // tool radios + their labels (if present)
+            "input[name='md_tool_path']",
+            "input[name='md_tool_erase']",
+            ".md-tool-label[data-tool='path']",
+            ".md-tool-label[data-tool='erase']",
+        ];
+
+        selectors.forEach((sel) => {
+            const el = q(sel);
+            if (!el) return;
+
+            if (isEnabled) {
+                el.removeAttribute("disabled");
+                el.classList.remove("is-disabled");
+                el.setAttribute("aria-disabled", "false");
+            } else {
+                el.setAttribute("disabled", "disabled");
+                el.classList.add("is-disabled");
+                el.setAttribute("aria-disabled", "true");
+            }
+        });
+    }
+
+
 
     // ====== Built-in Sections ======
 
@@ -347,6 +395,171 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         }
     });
 
+    // ---------- Map Designer ----------
+    registerSection({
+        id: "mapDesigner",
+        title: "Map Designer",
+        render: () => {
+            const section = createEl("section", { class: "admin-section" }, [
+                createEl("h2", { class: "admin-section-title" }, ["Map Designer"]),
+                createEl("div", { class: "admin-form" }, [
+                    // Controls row
+                    createEl("div", { class: "row" }, [
+                        createEl("button", { type: "button", id: "md_enable", class: "admin-btn primary" }, ["Enable Editor"]),
+                        createEl("button", { type: "button", id: "md_clear", class: "admin-btn warning" }, ["Clear"])
+                    ]),
+                    // Tool row
+                    createEl("div", { class: "row" }, [
+                        createEl("label", { class: "admin-label" }, [
+                            createEl("span", { class: "admin-label-text" }, ["Tool"]),
+                            (() => {
+                                const select = createEl("select", { id: "md_tool", class: "admin-input" }, [
+                                    createEl("option", { value: "path" }, ["Path (add)"]),
+                                    createEl("option", { value: "erase" }, ["Erase"])
+                                ]);
+                                return select;
+                            })()
+                        ]),
+                        createEl("label", { class: "admin-label" }, [
+                            createEl("span", { class: "admin-label-text" }, ["Snap to grid (always on)"]),
+                            createEl("span", {}, ["The editor snaps clicks to cells; drag to paint."])
+                        ])
+                    ]),
+                    // Import/Export
+                    createEl("div", { class: "row2" }, [
+                        createEl("label", { class: "admin-label" }, [
+                            createEl("span", { class: "admin-label-text" }, ["Export JSON"]),
+                            createEl("textarea", { id: "md_export", class: "admin-input", rows: "6", spellcheck: "false" }, [])
+                        ]),
+                        createEl("label", { class: "admin-label" }, [
+                            createEl("span", { class: "admin-label-text" }, ["Import JSON"]),
+                            createEl("textarea", { id: "md_import", class: "admin-input", rows: "6", placeholder: "[ { x:0, y:0 }, ... ]" }, [])
+                        ])
+                    ]),
+                    createEl("div", { class: "row" }, [
+                        createEl("button", { type: "button", id: "md_copy", class: "admin-btn" }, ["Copy Export"]),
+                        createEl("button", { type: "button", id: "md_paste", class: "admin-btn" }, ["Load Import"]),
+                        createEl("button", { type: "button", id: "md_commit", class: "admin-btn success" }, ["Commit & Rebuild Grid"])
+                    ]),
+                    createEl("div", { class: "hintText" }, [
+                        "Tip: With editor enabled, click-or-drag on the main canvas to add/erase path cells. ",
+                        "Export/Import uses a minimal array of { x, y } cells."
+                    ])
+                ])
+            ]);
+
+            // Hook up to main.js via uiHooks (passed from createAdminPanel caller)
+            const h = uiHooks?.mapDesignerHooks;
+            const q = (id) => section.querySelector(id);
+
+            // On open, refresh export box with current working copy (or config if inactive)
+            setTimeout(() => {
+                if (h?.getExportText) q("#md_export").value = h.getExportText();
+            }, 0);
+
+            q("#md_enable")?.addEventListener("click", (e) => {
+                e.preventDefault();
+                if (!MD) return;
+
+                const btn = e.currentTarget;
+                const isActive = btn.dataset.active === "1";
+
+                if (isActive) {
+                    // === TURNING OFF ===
+                    MD.disable?.();
+                    setMapDesignerUiEnabled(false);
+                    btn.dataset.active = "0";
+                    btn.classList.remove("md-active"); // 👈 remove glow
+                    btn.textContent = "Enable Editing";
+                } else {
+                    // === TURNING ON ===
+                    MD.enable?.();
+                    setMapDesignerUiEnabled(true);
+                    btn.dataset.active = "1";
+                    btn.classList.add("md-active"); // 👈 add glow
+                    btn.textContent = "Disable Editing";
+                }
+            });
+
+
+            q("#md_startBlank")?.addEventListener("click", (e) => {
+                e.preventDefault();
+                if (!MD) return;
+
+                MD.startBlank?.();
+                q("#md_export").value = MD.getExportText?.() ?? "[]";
+            });
+
+
+            // Clear working path (auto-enable if needed so user can immediately draw)
+            q("#md_clear")?.addEventListener("click", (e) => {
+                e.preventDefault();
+                if (!MD) return;
+
+                // Ensure we are in edit mode, then clear
+                MD.enable?.();
+                MD.clear?.();
+
+                // Reflect active UI state (glow + enable other MD controls)
+                const btn = q("#md_enable");
+                if (btn) {
+                    btn.dataset.active = "1";
+                    btn.classList.add("md-active");
+                    btn.textContent = "Disable Editing";
+                }
+                setMapDesignerUiEnabled(true);
+
+                // Force the tool dropdown back to PATH so first click paints
+                const toolSel = q("#md_tool");
+                if (toolSel) toolSel.value = "path";
+
+                // Update export box (now just "[]")
+                const exp = q("#md_export");
+                if (exp) exp.value = MD.getExportText?.() ?? "[]";
+            });
+
+
+
+            q("#md_tool").addEventListener("change", (e) => h?.setTool?.(e.target.value));
+
+            q("#md_copy").addEventListener("click", async () => {
+                const text = q("#md_export").value;
+                try { await navigator.clipboard.writeText(text); } catch { }
+            });
+
+            q("#md_paste").addEventListener("click", () => {
+                const text = q("#md_import").value;
+                const ok = h?.loadFromJSON?.(text);
+                if (ok) q("#md_export").value = h.getExportText();
+            });
+
+            // Commit & Rebuild: apply working path, rebuild map, then DISABLE editing
+            q("#md_commit")?.addEventListener("click", (e) => {
+                e.preventDefault();
+                if (!MD) return;
+
+                MD.commitToConfig?.();
+                MD.disable?.();
+
+                const btn = q("#md_enable");
+                btn.dataset.active = "0";
+                btn.classList.remove("md-active"); // 👈 remove glow
+                btn.textContent = "Enable Editing";
+                setMapDesignerUiEnabled(false);
+
+                q("#md_export").value = MD.getExportText?.() ?? "[]";
+            });
+
+
+            // After all controls exist in the DOM, explicitly disable them on first render
+            setTimeout(() => {
+                setMapDesignerUiEnabled(false);
+            }, 0);
+
+            return section;
+        }
+    });
+
     // ====== Panel Controls ======
     function open() {
         panel.classList.add("open");
@@ -398,9 +611,6 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         ]);
     }
 }
-
-
-
 
 function createLabeledNumber(label, id, value, min, max, step) {
     return createEl("label", { class: "admin-label" }, [

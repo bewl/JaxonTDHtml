@@ -327,6 +327,216 @@ function findShopButtonForTowerKey(key) {
         document.querySelector(`.tower-button[data-tower-type="${key}"]`);
 }
 
+// ===========================================
+// Map Designer (admin-driven, live overlay on main canvas)
+// (Place this ABOVE mapDesignerHooks and ABOVE createAdminPanel call.)
+// ===========================================
+const mapDesigner = {
+    isActive: false,
+    tool: "path",            // "path" | "erase"
+    workingPath: [],
+    dragPainting: false,
+
+    // snapshot so enabling gives a fresh canvas, and you can restore if you CANCEL
+    stash: null,             // { towers, enemies, projectiles, money, lives, currentWaveNumber, spawnerActive }
+    didCommitLast: false,    // if you commit, we don't restore the stash on disable
+};
+
+// Start with a blank workingPath (fresh canvas)
+function startBlankWorkingPath() {
+    mapDesigner.workingPath = [];
+}
+
+function clonePathCellsFromConfig() {
+    const src = configuration?.map?.pathCells ?? [];
+    return src.map(c => ({ x: c.x | 0, y: c.y | 0 }));
+}
+
+function setWorkingFromConfig() {
+    mapDesigner.workingPath = clonePathCellsFromConfig();
+}
+
+function exportWorkingJSON() {
+    return JSON.stringify(mapDesigner.workingPath, null, 2);
+}
+
+function loadWorkingFromJSON(text) {
+    try {
+        const arr = JSON.parse(text);
+        if (!Array.isArray(arr)) return false;
+        mapDesigner.workingPath = arr
+            .map(o => ({ x: Number(o.x) | 0, y: Number(o.y) | 0 }))
+            .filter(o => Number.isFinite(o.x) && Number.isFinite(o.y));
+        return true;
+    } catch { return false; }
+}
+
+function commitWorkingToConfigAndRebuild() {
+    // Validate before committing
+    const { ok, reason } = validateWorkingPath(mapDesigner.workingPath, gameState.gridMap);
+    if (!ok) {
+        toast.error(reason || "Invalid path.", { title: "Map Designer", durationMs: 4000 });
+        return;
+    }
+
+    // Replace map path with a deep copy of the working path
+    configuration.map.pathCells = mapDesigner.workingPath.map(c => ({ x: c.x | 0, y: c.y | 0 }));
+
+    // Recompute grid & realign entities
+    recomputeGridForCanvas(configuration, gameState, renderer, gameCanvas);
+
+    // From here on, consider this a new run — don't restore previous stash on disable
+    mapDesigner.didCommitLast = true;
+}
+
+function snapToGrid(px, py) {
+    const size = configuration.gridCellSize;
+    return { gx: Math.floor(px / size), gy: Math.floor(py / size) };
+}
+
+function cellIndexInWorking(gx, gy) {
+    return mapDesigner.workingPath.findIndex(c => c.x === gx && c.y === gy);
+}
+
+function addCell(gx, gy) {
+    if (gx < 0 || gy < 0) return;
+    if (gx >= gameState.gridMap.gridColumnCount || gy >= gameState.gridMap.gridRowCount) return;
+    if (cellIndexInWorking(gx, gy) === -1) {
+        mapDesigner.workingPath.push({ x: gx, y: gy });
+    }
+}
+
+function eraseCell(gx, gy) {
+    const i = cellIndexInWorking(gx, gy);
+    if (i >= 0) mapDesigner.workingPath.splice(i, 1);
+}
+
+const mapDesignerHooks = {
+    enable() {
+        // Snapshot gameplay so editor starts with a fresh canvas
+        mapDesigner.stash = {
+            towers: [...gameState.towers],
+            enemies: [...gameState.enemies],
+            projectiles: [...gameState.projectiles],
+            money: gameState.money,
+            lives: gameState.lives,
+            currentWaveNumber: gameState.currentWaveNumber,
+            spawnerActive: !!waveSpawnerSystem.isActive,
+        };
+
+        // Fresh canvas: stop action and clear everything visible
+        waveSpawnerSystem.isActive = false;
+        gameState.towers.length = 0;
+        gameState.enemies.length = 0;
+        gameState.projectiles.length = 0;
+
+        // Fresh working path by request
+        startBlankWorkingPath();
+
+        mapDesigner.didCommitLast = false;
+        mapDesigner.isActive = true;
+        mapDesigner.dragPainting = false;
+    },
+    disable() {
+        mapDesigner.isActive = false;
+        mapDesigner.dragPainting = false;
+
+        // If the user did not commit, restore the snapshot so nothing is lost
+        if (mapDesigner.stash && !mapDesigner.didCommitLast) {
+            gameState.towers = mapDesigner.stash.towers;
+            gameState.enemies = mapDesigner.stash.enemies;
+            gameState.projectiles = mapDesigner.stash.projectiles;
+            gameState.money = mapDesigner.stash.money;
+            gameState.lives = mapDesigner.stash.lives;
+            gameState.currentWaveNumber = mapDesigner.stash.currentWaveNumber;
+            waveSpawnerSystem.isActive = mapDesigner.stash.spawnerActive;
+        }
+
+        mapDesigner.stash = null;
+    },
+    clear() {
+        // Keep editor active so painting can resume immediately after a clear
+        mapDesigner.isActive = true;
+        mapDesigner.dragPainting = false;
+
+        // Reset tool to PATH to ensure clicks add cells (not erase)
+        mapDesigner.tool = "path";
+
+        // Wipe both working and committed paths
+        mapDesigner.workingPath = [];
+        configuration.map.pathCells = [];
+
+        // Fresh grid (blank path)
+        recomputeGridForCanvas(configuration, gameState, renderer, gameCanvas);
+
+        // Make sure the overlay points at the (now empty) working path; update() will keep it in sync
+        if (renderer.setMapDesignerOverlay) {
+            renderer.setMapDesignerOverlay(mapDesigner.workingPath);
+        }
+    },
+    startBlank() {
+        startBlankWorkingPath();
+    },
+    setTool(tool) {
+        mapDesigner.tool = tool === "erase" ? "erase" : "path";
+    },
+    getExportText() {
+        return exportWorkingJSON();
+    },
+    loadFromJSON(text) {
+        return loadWorkingFromJSON(text);
+    },
+    commitToConfig() {
+        commitWorkingToConfigAndRebuild();
+    }
+};
+
+function validateWorkingPath(path, grid) {
+    // must have at least 2 cells
+    if (!Array.isArray(path) || path.length < 2) {
+        return { ok: false, reason: "Path must have at least START and END cells." };
+    }
+
+    const cols = grid.gridColumnCount;
+    const rows = grid.gridRowCount;
+
+    // helper: is cell within grid bounds
+    const inBounds = (x, y) => x >= 0 && y >= 0 && x < cols && y < rows;
+
+    // helper: edge cell?
+    const isEdge = (x, y) => (x === 0 || y === 0 || x === cols - 1 || y === rows - 1);
+
+    // 1) All cells must be in-bounds
+    for (const c of path) {
+        if (!inBounds(c.x, c.y)) {
+            return { ok: false, reason: `Cell (${c.x},${c.y}) is out of bounds.` };
+        }
+    }
+
+    // 2) START and END must be on an edge
+    const start = path[0];
+    const end = path[path.length - 1];
+    if (!isEdge(start.x, start.y)) {
+        return { ok: false, reason: "START cell must be on the grid edge." };
+    }
+    if (!isEdge(end.x, end.y)) {
+        return { ok: false, reason: "END cell must be on the grid edge." };
+    }
+
+    // 3) Contiguity: every step must be 4-neighbor adjacent (Manhattan distance == 1)
+    for (let i = 1; i < path.length; i += 1) {
+        const a = path[i - 1], b = path[i];
+        const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y);
+        if (!((dx === 1 && dy === 0) || (dx === 0 && dy === 1))) {
+            return { ok: false, reason: `Path is not contiguous at (${a.x},${a.y}) → (${b.x},${b.y}).` };
+        }
+    }
+
+    return { ok: true };
+}
+
+
+
 const adminPanel = createAdminPanel(document, gameState, configuration, {
     rebuildTowerButtons: () => {
         // Rebuild and keep current selection if still present
@@ -344,7 +554,8 @@ const adminPanel = createAdminPanel(document, gameState, configuration, {
     selectTowerType: (key) => {
         const btn = findShopButtonForTowerKey(key);
         if (btn) selectTowerType(key, btn);
-    }
+    },
+    mapDesignerHooks
 });
 
 const openAdminButton = document.getElementById("openAdminPanelButton");
@@ -363,8 +574,6 @@ window.addEventListener("keydown", (evt) => {
         adminPanel.toggle();
     }
 });
-
-
 
 // ===========================================
 // Pointer Interactions (hover -> tower range or placement ghost)
@@ -650,6 +859,37 @@ gameCanvas.addEventListener("mouseleave", () => {
     lastDragPlacedCellKey = null;
 });
 
+// --- Map Designer pointer handlers ---
+gameCanvas.addEventListener("mousedown", (e) => {
+    if (!mapDesigner.isActive) return;
+    const rect = getCanvasBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const { gx, gy } = snapToGrid(mouseX, mouseY);
+
+    if (mapDesigner.tool === "erase") eraseCell(gx, gy);
+    else addCell(gx, gy);
+
+    mapDesigner.dragPainting = true;
+});
+
+gameCanvas.addEventListener("mousemove", (e) => {
+    if (!mapDesigner.isActive || !mapDesigner.dragPainting) return;
+    const rect = getCanvasBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const { gx, gy } = snapToGrid(mouseX, mouseY);
+    if (mapDesigner.tool === "erase") eraseCell(gx, gy);
+    else addCell(gx, gy);
+});
+
+["mouseup", "mouseleave"].forEach(type => {
+    gameCanvas.addEventListener(type, () => {
+        if (mapDesigner.isActive) mapDesigner.dragPainting = false;
+    });
+});
+
+
 
 
 // Allow ESC to toggle selection off
@@ -689,6 +929,10 @@ function update(deltaSeconds) {
             onClick: () => resetGameState(),
         });
     }
+
+    // Persist the overlay path on the renderer; draw happens in drawFrame.
+    renderer.setMapDesignerOverlay(mapDesigner.isActive ? mapDesigner.workingPath : null);
+
 
     refreshStatsPanel(userInterface, gameState, configuration);
 }
