@@ -171,28 +171,27 @@ export class CanvasRenderer {
         const ctx = this.renderingContext2D;
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-        // ----- SAFE base-path checks -----
         const showBasePath = !this._hideBasePathWhileEditing;
         const waypoints = (this.gridMap && Array.isArray(this.gridMap.waypoints)) ? this.gridMap.waypoints : [];
         const hasDrawablePath = showBasePath && waypoints.length >= 2;
 
-        // Grid
+        // grid
         for (let gridX = 0; gridX < this.gridMap.gridColumnCount; gridX += 1) {
             for (let gridY = 0; gridY < this.gridMap.gridRowCount; gridY += 1) {
                 const cellX = gridX * this.gridMap.gridCellSize;
                 const cellY = gridY * this.gridMap.gridCellSize;
-
                 const isPathCell = hasDrawablePath && this.gridMap.isGridCellOnPath(gridX, gridY);
                 ctx.fillStyle = isPathCell ? "#17202b" : "rgba(255,255,255,0.02)";
-                ctx.fillRect(cellX, cellY, this.gridMap.gridCellSize, this.gridMap.gridCellSize);
+                ctx.fillRect(cellX, cellY, this.gridMap.gridCellSize - 1, this.gridMap.gridCellSize - 1);
             }
         }
 
-        // draw base path if present
+        // path
         if (hasDrawablePath) {
             ctx.beginPath();
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = "#18303b";
+            ctx.lineWidth = 20;
+            ctx.lineCap = "round";
+            ctx.strokeStyle = "#2c566f";
             ctx.moveTo(waypoints[0].x, waypoints[0].y);
             for (let i = 1; i < waypoints.length; i += 1) {
                 const wp = waypoints[i];
@@ -201,40 +200,106 @@ export class CanvasRenderer {
             ctx.stroke();
         }
 
-        // ---- draw decals (scorch marks) under entities ----
+        // decals below units
         if (Array.isArray(gameState.decals) && gameState.decals.length) {
-            for (const decal of gameState.decals) {
-                if (decal.type === "scorch") {
-                    const alpha = Math.max(0, Math.min(1, (decal.alpha ?? 0.8) * (decal.lifeMs / (decal.maxLifeMs || decal.lifeMs))));
-                    const r = decal.radius || 12;
-                    const grd = ctx.createRadialGradient(decal.x, decal.y, 0, decal.x, decal.y, r);
-                    grd.addColorStop(0, `rgba(0,0,0,${0.15 * alpha})`);
-                    grd.addColorStop(0.6, `rgba(40,20,10,${0.11 * alpha})`);
-                    grd.addColorStop(1, `rgba(20,10,8,${0.06 * alpha})`);
-                    ctx.save();
-                    ctx.globalCompositeOperation = "multiply";
-                    ctx.fillStyle = grd;
-                    ctx.beginPath();
-                    ctx.arc(decal.x, decal.y, r, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.restore();
-                }
+            for (const d of gameState.decals) {
+                const fade = (typeof d.maxLifeMs === "number" && d.maxLifeMs > 0)
+                    ? Math.max(0, Math.min(1, d.lifeMs / d.maxLifeMs))
+                    : 1;
+                const baseAlpha = (typeof d.alpha === "number" ? d.alpha : 0.85);
+                const alpha = baseAlpha * fade;
+                const r = d.radius || 48;
+
+                const g = ctx.createRadialGradient(d.x, d.y, r * 0.2, d.x, d.y, r);
+                g.addColorStop(0, hexToRgba("#000000", alpha * 0.35));
+                g.addColorStop(1, "rgba(0,0,0,0)");
+
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.arc(d.x, d.y, r, 0, Math.PI * 2);
+                ctx.fill();
             }
         }
 
-        // Towers
+        // towers, enemies, projectiles
         for (const tower of gameState.towers) this.drawTower(tower);
-
-        // Enemies
         for (const enemy of gameState.enemies) this.drawEnemy(enemy);
-
-        // Projectiles
         for (const projectile of gameState.projectiles) this.drawProjectile(projectile);
 
-        // Particles
-        this.drawParticles(gameState);
+        // particles (explosion fragments, trails)
+        if (Array.isArray(gameState.particles) && gameState.particles.length) {
+            ctx.save();
+            ctx.globalCompositeOperation = "lighter";
+            for (const p of gameState.particles) {
+                const fade = (typeof p.maxLifeMs === "number" && p.maxLifeMs > 0)
+                    ? Math.max(0, Math.min(1, p.lifeMs / p.maxLifeMs))
+                    : 1;
+                if (fade <= 0) continue;
+                ctx.globalAlpha = fade;
+                ctx.fillStyle = p.color || "#ffffff";
+                const size = Math.max(1, p.size || 2);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+            ctx.globalAlpha = 1;
+        }
 
-        // Hover preview ring (range outline)
+        // lightning bolts
+        if (Array.isArray(gameState.lightningBeams) && gameState.lightningBeams.length) {
+            const now = performance.now();
+            const kept = [];
+            for (const beam of gameState.lightningBeams) {
+                const ttl = Math.max(1, beam.ttlMs || 120);
+                const age = Math.max(0, now - (beam.createdAt || now));
+                const p = Math.min(1, age / ttl);
+                const fade = 1 - p;
+                if (fade <= 0) continue;
+
+                const pts = beam.points;
+                if (!Array.isArray(pts) || pts.length < 2) continue;
+
+                ctx.save();
+                ctx.globalCompositeOperation = "lighter";
+                ctx.lineCap = "round";
+                ctx.lineJoin = "round";
+
+                ctx.strokeStyle = hexToRgba(beam.glowColor || "#93c5fd", 0.35 * fade);
+                ctx.lineWidth = (beam.lineWidth || 2) * 3;
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+                ctx.stroke();
+
+                ctx.strokeStyle = hexToRgba(beam.coreColor || "#e0f2fe", 0.95 * fade);
+                ctx.lineWidth = (beam.lineWidth || 2);
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+                ctx.stroke();
+
+                ctx.restore();
+
+                if (age < ttl) kept.push(beam);
+            }
+            gameState.lightningBeams = kept;
+        }
+
+        // subtle screen flash overlay (e.g., nuke)
+        if (gameState.screenFlash && gameState.screenFlash.ttlMs > 0 && (gameState.screenFlash.alpha || 0) > 0) {
+            const maxT = Math.max(1, gameState.screenFlash.maxTtlMs || gameState.screenFlash.ttlMs);
+            const ratio = Math.max(0, Math.min(1, gameState.screenFlash.ttlMs / maxT));
+            const effectiveAlpha = (gameState.screenFlash.alpha || 0) * ratio;
+
+            ctx.save();
+            ctx.globalCompositeOperation = "screen";
+            ctx.fillStyle = hexToRgba("#ffffff", effectiveAlpha);
+            ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            ctx.restore();
+        }
+
+        // hover range ring
         if (this.hoverPreview && this.configuration.showRangeOnHover) {
             const { x, y, radiusPixels, strokeColor } = this.hoverPreview;
             ctx.save();
@@ -247,44 +312,36 @@ export class CanvasRenderer {
             ctx.restore();
         }
 
-        // Placement ghost
+        // placement ghost
         if (this.placementGhost) this.drawGhostTower(this.placementGhost);
 
-        // Floating text
+        // floating combat text
         if (Array.isArray(gameState.floatingTexts)) {
             for (const ft of gameState.floatingTexts) this.drawFloatingText(ft);
         }
 
-        // --- Screen flash overlay (TONED DOWN + ease-out) ---
-        if (gameState.screenFlash && gameState.screenFlash.alpha > 0 && gameState.screenFlash.ttlMs > 0) {
-            // Cap the maximum visual intensity hard (very low)
-            const MAX_ALPHA = 0.20;  // hard upper bound on opacity
-            const ttl = Math.max(0, gameState.screenFlash.ttlMs);
-            const DURATION = 120;    // must match FLASH_TTL in combatSystem
-            const ratio = Math.max(0, Math.min(1, ttl / DURATION));
-
-            // Ease-out so it fades quickly and gently: easeOutQuad
-            const eased = 1 - (1 - ratio) * (1 - ratio);
-
-            const visualAlpha = Math.min(MAX_ALPHA, (gameState.screenFlash.alpha || 0.16)) * eased;
-
-            if (visualAlpha > 0.001) {
-                ctx.save();
-                ctx.globalAlpha = visualAlpha;
-                ctx.fillStyle = "#ffffff";
-                ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-                ctx.restore();
-            }
-
-            // decay
-            const step = Math.min(50, gameState.screenFlash.ttlMs);
-            gameState.screenFlash.ttlMs = Math.max(0, gameState.screenFlash.ttlMs - step);
-            if (gameState.screenFlash.ttlMs <= 0) {
-                gameState.screenFlash.alpha = 0;
-                gameState.screenFlash.ttlMs = 0;
-            }
+        // map designer overlay
+        if (this._mapDesignerPath && this._mapDesignerPath.length) {
+            this.drawMapDesignerOverlay(this._mapDesignerPath);
         }
+
+        // debug HUD
+        ctx.save();
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = "rgba(4,7,11,0.6)";
+        ctx.fillRect(8, 8, 220, 80);
+        ctx.fillStyle = "#dbeafe";
+        ctx.font = "14px sans-serif";
+        ctx.fillText("JaxonTD — Debug HUD", 18, 16);
+        ctx.fillText(`Enemies: ${gameState.enemies.length}`, 18, 36);
+        ctx.fillText(`Projectiles: ${gameState.projectiles.length}`, 18, 56);
+        ctx.restore();
     }
+
 
     /**
      * Simple particle updater + renderer.

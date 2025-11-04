@@ -5,7 +5,7 @@
 import { distanceBetweenPoints, linearInterpolate } from "../core/mathUtils.js";
 import { ProjectileEntity } from "../entities/projectile.js";
 import { FloatingText } from "../entities/floatingText.js";
-
+import { EffectsRegistry } from './effects/effectsRegistry.js';
 
 // -------------------------------------------
 // Target selection
@@ -122,13 +122,13 @@ export class CombatSystem {
     }
 
     tick(gameState, deltaSeconds) {
-        // Track previous positions to infer direction when velocity is unavailable
+        // cache previous enemy positions for direction inference
         for (const enemy of gameState.enemies) {
             if (enemy._prevX === undefined) enemy._prevX = enemy.x;
             if (enemy._prevY === undefined) enemy._prevY = enemy.y;
         }
 
-        // Towers: aim every frame, fire when ready
+        // towers: aim and fire
         for (const tower of gameState.towers) {
             tower.cooldownSeconds -= deltaSeconds;
 
@@ -140,7 +140,7 @@ export class CombatSystem {
 
             tower.currentTarget = targetEnemy || null;
 
-            // Smooth rotation toward target
+            // rotate toward target if tower supports rotation
             if (tower.currentTarget && typeof tower.rotationRadians === "number") {
                 const dx = tower.currentTarget.x - tower.x;
                 const dy = tower.currentTarget.y - tower.y;
@@ -149,13 +149,13 @@ export class CombatSystem {
                 tower.rotationRadians += diff * Math.min(1, deltaSeconds * 8);
             }
 
-            // Fire projectile if ready
+            // fire when off cooldown and target available
             if (tower.cooldownSeconds <= 0 && targetEnemy) {
                 tower.cooldownSeconds = 1 / tower.attacksPerSecond;
                 const dmgType = tower.damageType || "physical";
 
-                const aoeConfig = tower.aoe || tower.splash || null;   // back-compat for radius only
-                const effectsConfig = tower.projectileEffects || null;  // explicit FX
+                const aoeConfig = tower.aoe || tower.splash || null;          // damage radius (if any)
+                const effectsConfig = tower.projectileEffects || null;         // visual/physics effects
 
                 gameState.projectiles.push(
                     new ProjectileEntity({
@@ -174,40 +174,46 @@ export class CombatSystem {
             }
         }
 
-        // Update projectiles (travel + impact)
+        // projectiles travel + impact
         for (const projectile of gameState.projectiles) {
-            projectile.travelProgress += deltaSeconds * gameState.configuration.projectileLerpSpeedPerSecond;
+            const lerpSpeed = projectile._overrideLerpSpeed ?? gameState.configuration.projectileLerpSpeedPerSecond;
+            projectile.travelProgress += deltaSeconds * lerpSpeed;
             const t = Math.min(projectile.travelProgress, 1);
             projectile._currentX = linearInterpolate(projectile.x, projectile.targetX, t);
             projectile._currentY = linearInterpolate(projectile.y, projectile.targetY, t);
 
+            // travel-time effects (e.g., trails)
+            if (projectile.effects && typeof EffectsRegistry?.applyTravel === 'function') {
+                EffectsRegistry.applyTravel(gameState, projectile, deltaSeconds);
+            } else {
+                // fallback from tower config if projectile was created without effects copied
+                const towerCfg = gameState.configuration?.towersByTypeKey?.[projectile.towerTypeKey];
+                if (!projectile.effects && towerCfg?.projectileEffects) {
+                    projectile.effects = towerCfg.projectileEffects;
+                    EffectsRegistry.applyTravel(gameState, projectile, deltaSeconds);
+                }
+            }
+
             if (projectile.travelProgress >= 1) {
                 const dmgType = projectile.damageType || "physical";
 
-                // AOE radius (new `aoe`, legacy `splash` for damage only)
+                // aoe damage if configured, otherwise direct-hit
                 const AOE_RADIUS =
                     (projectile.aoe && projectile.aoe.radiusPixels) ||
                     (projectile.splash && projectile.splash.radiusPixels) ||
                     0;
 
-                // Damage: AOE if configured, else direct-hit
                 if (AOE_RADIUS > 0) {
                     for (const enemy of gameState.enemies) {
                         if (enemy._isMarkedDead) continue;
-                        const distance = Math.hypot(
-                            enemy.x - projectile._currentX,
-                            enemy.y - projectile._currentY
-                        );
+                        const distance = Math.hypot(enemy.x - projectile._currentX, enemy.y - projectile._currentY);
                         if (distance < AOE_RADIUS) {
                             const before = Math.max(0, enemy.hitPoints);
-                            const raw = Math.max(
-                                0,
-                                Math.round(
-                                    projectile.damagePerHit *
-                                    gameState.modifiers.towerDamageMultiplier *
-                                    typeMultFor(enemy, dmgType)
-                                )
-                            );
+                            const raw = Math.max(0, Math.round(
+                                projectile.damagePerHit *
+                                gameState.modifiers.towerDamageMultiplier *
+                                typeMultFor(enemy, dmgType)
+                            ));
                             const falloff = 1 - (distance / AOE_RADIUS);
                             const applied = Math.min(before, Math.round(raw * falloff));
                             if (applied > 0) {
@@ -231,14 +237,11 @@ export class CombatSystem {
                 } else if (projectile.targetEnemy && !projectile.targetEnemy._isMarkedDead) {
                     const enemy = projectile.targetEnemy;
                     const before = Math.max(0, enemy.hitPoints);
-                    const raw = Math.max(
-                        0,
-                        Math.round(
-                            projectile.damagePerHit *
-                            gameState.modifiers.towerDamageMultiplier *
-                            typeMultFor(enemy, dmgType)
-                        )
-                    );
+                    const raw = Math.max(0, Math.round(
+                        projectile.damagePerHit *
+                        gameState.modifiers.towerDamageMultiplier *
+                        typeMultFor(enemy, dmgType)
+                    ));
                     const applied = Math.min(raw, before);
                     if (applied > 0) {
                         enemy.hitPoints = before - applied;
@@ -258,134 +261,20 @@ export class CombatSystem {
                     }
                 }
 
-                // Effects: only if explicitly enabled on the projectile or its tower config
-                const towerCfg = gameState.configuration?.towersByTypeKey?.[projectile.towerTypeKey];
-                const effects = projectile.effects || towerCfg?.projectileEffects || {};
-
-                // Explosion FX (particles + scorch + flash)
-                if (effects.explosion?.enabled === true) {
-                    // Avoid mixing ?? with || by grouping; default to 80 if both undefined/0
-                    const exRadiusCandidate = (effects.explosion.radiusPixelsOverride ?? AOE_RADIUS);
-                    const EX_RADIUS = exRadiusCandidate || 80;
-
-                    const CENTER_X = projectile._currentX;
-                    const CENTER_Y = projectile._currentY;
-
-                    // Particles
-                    const PARTICLE_COUNT = Math.max(20, Math.floor(EX_RADIUS / 2.0));
-                    for (let i = 0; i < PARTICLE_COUNT; i++) {
-                        const angle = Math.random() * Math.PI * 2;
-                        const speed = (Math.random() * 0.8 + 0.4) * (EX_RADIUS / 40);
-                        const vx = Math.cos(angle) * speed;
-                        const vy = Math.sin(angle) * speed;
-                        const life = 500 + Math.random() * 600;
-                        const size = 2 + Math.random() * 7;
-                        const r = Math.random();
-                        const color = r < 0.12 ? "#fff3b0" : (r < 0.5 ? "#ffb24d" : "#6b2f1b");
-
-                        gameState.particles.push({
-                            type: "fragment",
-                            x: CENTER_X + (Math.random() - 0.5) * 6,
-                            y: CENTER_Y + (Math.random() - 0.5) * 6,
-                            vx, vy,
-                            lifeMs: life,
-                            maxLifeMs: life,
-                            size,
-                            color
-                        });
-                    }
-
-                    // Scorch decal
-                    gameState.decals.push({
-                        type: "scorch",
-                        x: CENTER_X,
-                        y: CENTER_Y,
-                        radius: EX_RADIUS * 0.6,
-                        lifeMs: 30000,
-                        maxLifeMs: 30000,
-                        alpha: 0.85
-                    });
-
-                    // Screen flash
-                    const FLASH_ALPHA = effects.explosion.flashAlpha ?? 0.16;
-                    const FLASH_TTL = effects.explosion.flashTtl ?? 120;
-                    if (!gameState.screenFlash) gameState.screenFlash = { alpha: 0, ttlMs: 0 };
-                    gameState.screenFlash.alpha = Math.max(gameState.screenFlash.alpha || 0, FLASH_ALPHA);
-                    gameState.screenFlash.ttlMs = Math.max(gameState.screenFlash.ttlMs || 0, FLASH_TTL);
+                // impact-time effects (explosion, knockback, cluster, chain, etc.)
+                if (!projectile.effects) {
+                    const towerCfg = gameState.configuration?.towersByTypeKey?.[projectile.towerTypeKey];
+                    if (towerCfg?.projectileEffects) projectile.effects = towerCfg.projectileEffects;
                 }
-
-                // Knockback (backwards along enemy movement)
-                if (effects.knockback?.enabled === true) {
-                    const K_RADIUS = AOE_RADIUS || 80;
-                    const CENTER_X = projectile._currentX;
-                    const CENTER_Y = projectile._currentY;
-                    const MAX_KNOCKBACK =
-                        Number.isFinite(effects.knockback.maxPx)
-                            ? Math.max(0, effects.knockback.maxPx)
-                            : Math.max(10, Math.min(80, Math.floor(K_RADIUS * 0.35)));
-
-                    for (const enemy of gameState.enemies) {
-                        if (enemy._isMarkedDead) continue;
-
-                        const dxc = enemy.x - CENTER_X;
-                        const dyc = enemy.y - CENTER_Y;
-                        const distFromCenter = Math.hypot(dxc, dyc);
-                        if (distFromCenter >= K_RADIUS) continue;
-
-                        const falloff = 1 - (distFromCenter / K_RADIUS);
-                        const impulse = MAX_KNOCKBACK * falloff;
-
-                        let fx = 0, fy = 0;
-                        if (Number.isFinite(enemy.vx) && Number.isFinite(enemy.vy) && (enemy.vx !== 0 || enemy.vy !== 0)) {
-                            fx = enemy.vx; fy = enemy.vy;
-                        } else if (
-                            enemy.nextWaypoint &&
-                            Number.isFinite(enemy.nextWaypoint.x) &&
-                            Number.isFinite(enemy.nextWaypoint.y)
-                        ) {
-                            fx = enemy.nextWaypoint.x - enemy.x;
-                            fy = enemy.nextWaypoint.y - enemy.y;
-                        } else if (
-                            Array.isArray(enemy.waypoints) &&
-                            enemy._waypointIndex != null &&
-                            enemy.waypoints[enemy._waypointIndex] &&
-                            Number.isFinite(enemy.waypoints[enemy._waypointIndex].x) &&
-                            Number.isFinite(enemy.waypoints[enemy._waypointIndex].y)
-                        ) {
-                            const wp = enemy.waypoints[enemy._waypointIndex];
-                            fx = wp.x - enemy.x;
-                            fy = wp.y - enemy.y;
-                        } else if (Number.isFinite(enemy._prevX) && Number.isFinite(enemy._prevY)) {
-                            fx = enemy.x - enemy._prevX;
-                            fy = enemy.y - enemy._prevY;
-                        }
-
-                        if (fx !== 0 || fy !== 0) {
-                            const fLen = Math.hypot(fx, fy) || 1;
-                            const bnx = -(fx / fLen);
-                            const bny = -(fy / fLen);
-                            enemy.x += bnx * impulse;
-                            enemy.y += bny * impulse;
-                        } else {
-                            if (distFromCenter === 0) {
-                                const ang = Math.random() * Math.PI * 2;
-                                enemy.x += Math.cos(ang) * (MAX_KNOCKBACK * 0.25);
-                                enemy.y += Math.sin(ang) * (MAX_KNOCKBACK * 0.25);
-                            } else {
-                                const onx = dxc / distFromCenter;
-                                const ony = dyc / distFromCenter;
-                                enemy.x += onx * impulse;
-                                enemy.y += ony * impulse;
-                            }
-                        }
-                    }
+                if (projectile.effects && typeof EffectsRegistry?.applyImpact === 'function') {
+                    EffectsRegistry.applyImpact(gameState, projectile, AOE_RADIUS);
                 }
 
                 projectile._isComplete = true;
             }
         }
 
-        // Fade and cleanup decals
+        // decals fade and cleanup
         if (Array.isArray(gameState.decals) && gameState.decals.length) {
             const decayMs = Math.max(0, Math.floor(deltaSeconds * 1000));
             for (const d of gameState.decals) {
@@ -394,7 +283,28 @@ export class CombatSystem {
             gameState.decals = gameState.decals.filter(d => (typeof d.lifeMs !== "number") || d.lifeMs > 0);
         }
 
-        // Remove defeated enemies and reward
+        // particles update: move, age, and cull
+        if (Array.isArray(gameState.particles) && gameState.particles.length) {
+            const step = deltaSeconds * 60; // convert to approx. frames for simple velocities
+            const decayMs = Math.max(0, Math.floor(deltaSeconds * 1000));
+            for (const p of gameState.particles) {
+                if (Number.isFinite(p.vx)) p.x += p.vx * step;
+                if (Number.isFinite(p.vy)) p.y += p.vy * step;
+                if (typeof p.lifeMs === "number") p.lifeMs = Math.max(0, p.lifeMs - decayMs);
+            }
+            gameState.particles = gameState.particles.filter(p => (typeof p.lifeMs !== "number") || p.lifeMs > 0);
+        }
+
+        // screen flash decay
+        if (gameState.screenFlash && typeof gameState.screenFlash.ttlMs === "number") {
+            const decayMs = Math.max(0, Math.floor(deltaSeconds * 1000));
+            gameState.screenFlash.ttlMs = Math.max(0, gameState.screenFlash.ttlMs - decayMs);
+            if (gameState.screenFlash.ttlMs <= 0) {
+                gameState.screenFlash.alpha = 0;
+            }
+        }
+
+        // enemy cleanup and rewards
         gameState.enemies = gameState.enemies.filter((enemy) => {
             if (enemy.hitPoints <= 0) {
                 gameState.money += enemy.rewardMoney;
@@ -403,15 +313,14 @@ export class CombatSystem {
             return !enemy._isMarkedDead;
         });
 
-        // Remove completed projectiles
+        // remove finished projectiles
         gameState.projectiles = gameState.projectiles.filter((p) => !p._isComplete);
 
-        // Store positions for next frame's direction inference
+        // store positions for next tick
         for (const enemy of gameState.enemies) {
             enemy._prevX = enemy.x;
             enemy._prevY = enemy.y;
         }
     }
-
 
 }

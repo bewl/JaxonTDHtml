@@ -182,7 +182,7 @@ const gameState = {
     gridMap: null,
     money: 0,
     lives: 0,
-    currentWaveNumber: 9,
+    currentWaveNumber: 0,
     autoStartNextWave: false,
     enemies: [],
     towers: [],

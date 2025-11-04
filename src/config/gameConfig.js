@@ -48,6 +48,19 @@ export const GAME_CONFIG = {
             damagePerShot: 12,
             baseRadiusPixels: 14,
             splash: { radiusPixels: 40 },
+            projectileEffects: {
+                cluster: {
+                    enabled: true,
+                    count: 6,
+                    spread: 360,
+                    childDistance: 40,
+                    childDistanceJitter: 20,
+                    childSpeedScale: 1.25,
+                    childDamageScale: 0.35,
+                    childAoe: { radiusPixels: 40 },
+                    childEffects: { explosion: { enabled: true, flashAlpha: 0.08, flashTtl: 80 } }
+                }
+            }
         },
         missile: {
             displayName: "Missile",
@@ -73,6 +86,31 @@ export const GAME_CONFIG = {
             projectileEffects: {
                 explosion: { enabled: true, flashAlpha: 0.12, flashTtl: 100 },
                 knockback: { enabled: true, maxPx: 60 }
+            }
+        },
+        tesla: {
+            displayName: "Tesla",
+            uiColor: "#38bdf8",
+            buildCost: 140,
+            attackRangePixels: 180,
+            attacksPerSecond: 1.1,
+            damagePerShot: 22,
+            baseRadiusPixels: 10,
+            damageType: "electric",
+            projectileEffects: {
+                trail: { enabled: true, color: "#93c5fd", lifeMs: 250, countPerSecond: 36, sizeMin: 1, sizeMax: 3 },
+                chain: {
+                    enabled: true,
+                    maxJumps: 3,
+                    jumpRadius: 120,
+                    damageFalloff: 0.6,
+                    boltTtlMs: 140,        // longer = lingers more
+                    boltSegments: 14,      // more segments = more detail
+                    boltAmplitude: 10,     // more = wilder zig-zags
+                    coreWidth: 2,          // core stroke width
+                    coreColor: "#e0f2fe",
+                    glowColor: "#93c5fd"
+                }
             }
         },
     },
