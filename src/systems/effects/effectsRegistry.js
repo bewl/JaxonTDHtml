@@ -233,6 +233,29 @@ function applyChainImpact(gameState, projectile, cfg) {
     }
 }
 
+function applyAftershockImpact(gameState, projectile, cfg, aoeRadius) {
+    if (!cfg?.enabled) return;
+
+    const delayMs = Math.max(0, cfg.delayMs ?? 600);
+    const radius = (cfg.radiusPixelsOverride ?? aoeRadius) || 80;
+    const dmgMult = cfg.damageMultiplier ?? 0.5;
+    const flashAlpha = cfg.flashAlpha ?? 0.08;
+    const flashTtl = cfg.flashTtl ?? 90;
+
+    const entry = {
+        type: "aftershock",
+        x: projectile._currentX,
+        y: projectile._currentY,
+        radius,
+        damagePerHit: Math.round((projectile.damagePerHit || 0) * dmgMult),
+        damageType: projectile.damageType || "physical",
+        towerTypeKey: projectile.towerTypeKey,
+        effects: { explosion: { enabled: true, flashAlpha, flashTtl } },
+        dueAt: performance.now() + delayMs
+    };
+    (gameState.scheduledEffects ||= []).push(entry);
+}
+
 export const EffectsRegistry = {
     applyTravel(gameState, projectile, deltaSeconds) {
         const effects = projectile.effects;
@@ -246,7 +269,8 @@ export const EffectsRegistry = {
 
         if (effects.explosion) applyExplosionImpact(gameState, projectile, effects.explosion, aoeRadius);
         if (effects.knockback) applyKnockbackImpact(gameState, projectile, effects.knockback, aoeRadius);
-        if (effects.cluster) applyClusterImpact(gameState, projectile, effects.cluster);
-        if (effects.chain) applyChainImpact(gameState, projectile, effects.chain);
+        if (effects.cluster) applyClusterImpact?.(gameState, projectile, effects.cluster);
+        if (effects.chain) applyChainImpact?.(gameState, projectile, effects.chain);
+        if (effects.aftershock) applyAftershockImpact(gameState, projectile, effects.aftershock, aoeRadius);
     }
 };

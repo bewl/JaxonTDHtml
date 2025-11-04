@@ -58,7 +58,7 @@ export const GAME_CONFIG = {
                     childSpeedScale: 1.25,
                     childDamageScale: 0.35,
                     childAoe: { radiusPixels: 40 },
-                    childEffects: { explosion: { enabled: true, flashAlpha: 0.08, flashTtl: 80 } }
+                    childEffects: { explosion: { enabled: true, flashAlpha: 0.04, flashTtl: 80 } }
                 }
             }
         },
@@ -113,6 +113,28 @@ export const GAME_CONFIG = {
                 }
             }
         },
+        aftershock: {
+            displayName: "Aftershock",
+            uiColor: "#f59e0b",
+            buildCost: 150,
+            attackRangePixels: 160,
+            attacksPerSecond: 0.9,
+            damagePerShot: 28,
+            baseRadiusPixels: 12,
+            damageType: "physical",
+            aoe: { radiusPixels: 70 },
+            projectileEffects: {
+                explosion: { enabled: true, flashAlpha: 0.09, flashTtl: 120 },
+                aftershock: {
+                    enabled: true,
+                    delayMs: 600,
+                    radiusPixelsOverride: 90,
+                    damageMultiplier: 0.6,
+                    flashAlpha: 0.03,
+                    flashTtl: 100
+                }
+            }
+        }
     },
     ui: {
         bossBar: {

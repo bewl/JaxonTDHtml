@@ -6,6 +6,7 @@ import { distanceBetweenPoints, linearInterpolate } from "../core/mathUtils.js";
 import { ProjectileEntity } from "../entities/projectile.js";
 import { FloatingText } from "../entities/floatingText.js";
 import { EffectsRegistry } from './effects/effectsRegistry.js';
+import { addExplosionParticles, addScorchDecal, triggerScreenFlash } from './effects/util.js';
 
 // -------------------------------------------
 // Target selection
@@ -122,13 +123,11 @@ export class CombatSystem {
     }
 
     tick(gameState, deltaSeconds) {
-        // cache previous enemy positions for direction inference
         for (const enemy of gameState.enemies) {
             if (enemy._prevX === undefined) enemy._prevX = enemy.x;
             if (enemy._prevY === undefined) enemy._prevY = enemy.y;
         }
 
-        // towers: aim and fire
         for (const tower of gameState.towers) {
             tower.cooldownSeconds -= deltaSeconds;
 
@@ -140,7 +139,6 @@ export class CombatSystem {
 
             tower.currentTarget = targetEnemy || null;
 
-            // rotate toward target if tower supports rotation
             if (tower.currentTarget && typeof tower.rotationRadians === "number") {
                 const dx = tower.currentTarget.x - tower.x;
                 const dy = tower.currentTarget.y - tower.y;
@@ -149,13 +147,12 @@ export class CombatSystem {
                 tower.rotationRadians += diff * Math.min(1, deltaSeconds * 8);
             }
 
-            // fire when off cooldown and target available
             if (tower.cooldownSeconds <= 0 && targetEnemy) {
                 tower.cooldownSeconds = 1 / tower.attacksPerSecond;
                 const dmgType = tower.damageType || "physical";
 
-                const aoeConfig = tower.aoe || tower.splash || null;          // damage radius (if any)
-                const effectsConfig = tower.projectileEffects || null;         // visual/physics effects
+                const aoeConfig = tower.aoe || tower.splash || null;
+                const effectsConfig = tower.projectileEffects || null;
 
                 gameState.projectiles.push(
                     new ProjectileEntity({
@@ -174,7 +171,6 @@ export class CombatSystem {
             }
         }
 
-        // projectiles travel + impact
         for (const projectile of gameState.projectiles) {
             const lerpSpeed = projectile._overrideLerpSpeed ?? gameState.configuration.projectileLerpSpeedPerSecond;
             projectile.travelProgress += deltaSeconds * lerpSpeed;
@@ -182,11 +178,9 @@ export class CombatSystem {
             projectile._currentX = linearInterpolate(projectile.x, projectile.targetX, t);
             projectile._currentY = linearInterpolate(projectile.y, projectile.targetY, t);
 
-            // travel-time effects (e.g., trails)
             if (projectile.effects && typeof EffectsRegistry?.applyTravel === 'function') {
                 EffectsRegistry.applyTravel(gameState, projectile, deltaSeconds);
             } else {
-                // fallback from tower config if projectile was created without effects copied
                 const towerCfg = gameState.configuration?.towersByTypeKey?.[projectile.towerTypeKey];
                 if (!projectile.effects && towerCfg?.projectileEffects) {
                     projectile.effects = towerCfg.projectileEffects;
@@ -197,7 +191,6 @@ export class CombatSystem {
             if (projectile.travelProgress >= 1) {
                 const dmgType = projectile.damageType || "physical";
 
-                // aoe damage if configured, otherwise direct-hit
                 const AOE_RADIUS =
                     (projectile.aoe && projectile.aoe.radiusPixels) ||
                     (projectile.splash && projectile.splash.radiusPixels) ||
@@ -206,14 +199,20 @@ export class CombatSystem {
                 if (AOE_RADIUS > 0) {
                     for (const enemy of gameState.enemies) {
                         if (enemy._isMarkedDead) continue;
-                        const distance = Math.hypot(enemy.x - projectile._currentX, enemy.y - projectile._currentY);
+                        const distance = Math.hypot(
+                            enemy.x - projectile._currentX,
+                            enemy.y - projectile._currentY
+                        );
                         if (distance < AOE_RADIUS) {
                             const before = Math.max(0, enemy.hitPoints);
-                            const raw = Math.max(0, Math.round(
-                                projectile.damagePerHit *
-                                gameState.modifiers.towerDamageMultiplier *
-                                typeMultFor(enemy, dmgType)
-                            ));
+                            const raw = Math.max(
+                                0,
+                                Math.round(
+                                    projectile.damagePerHit *
+                                    gameState.modifiers.towerDamageMultiplier *
+                                    typeMultFor(enemy, dmgType)
+                                )
+                            );
                             const falloff = 1 - (distance / AOE_RADIUS);
                             const applied = Math.min(before, Math.round(raw * falloff));
                             if (applied > 0) {
@@ -237,11 +236,14 @@ export class CombatSystem {
                 } else if (projectile.targetEnemy && !projectile.targetEnemy._isMarkedDead) {
                     const enemy = projectile.targetEnemy;
                     const before = Math.max(0, enemy.hitPoints);
-                    const raw = Math.max(0, Math.round(
-                        projectile.damagePerHit *
-                        gameState.modifiers.towerDamageMultiplier *
-                        typeMultFor(enemy, dmgType)
-                    ));
+                    const raw = Math.max(
+                        0,
+                        Math.round(
+                            projectile.damagePerHit *
+                            gameState.modifiers.towerDamageMultiplier *
+                            typeMultFor(enemy, dmgType)
+                        )
+                    );
                     const applied = Math.min(raw, before);
                     if (applied > 0) {
                         enemy.hitPoints = before - applied;
@@ -261,7 +263,6 @@ export class CombatSystem {
                     }
                 }
 
-                // impact-time effects (explosion, knockback, cluster, chain, etc.)
                 if (!projectile.effects) {
                     const towerCfg = gameState.configuration?.towersByTypeKey?.[projectile.towerTypeKey];
                     if (towerCfg?.projectileEffects) projectile.effects = towerCfg.projectileEffects;
@@ -274,7 +275,6 @@ export class CombatSystem {
             }
         }
 
-        // decals fade and cleanup
         if (Array.isArray(gameState.decals) && gameState.decals.length) {
             const decayMs = Math.max(0, Math.floor(deltaSeconds * 1000));
             for (const d of gameState.decals) {
@@ -283,9 +283,8 @@ export class CombatSystem {
             gameState.decals = gameState.decals.filter(d => (typeof d.lifeMs !== "number") || d.lifeMs > 0);
         }
 
-        // particles update: move, age, and cull
         if (Array.isArray(gameState.particles) && gameState.particles.length) {
-            const step = deltaSeconds * 60; // convert to approx. frames for simple velocities
+            const step = deltaSeconds * 60;
             const decayMs = Math.max(0, Math.floor(deltaSeconds * 1000));
             for (const p of gameState.particles) {
                 if (Number.isFinite(p.vx)) p.x += p.vx * step;
@@ -295,16 +294,62 @@ export class CombatSystem {
             gameState.particles = gameState.particles.filter(p => (typeof p.lifeMs !== "number") || p.lifeMs > 0);
         }
 
-        // screen flash decay
         if (gameState.screenFlash && typeof gameState.screenFlash.ttlMs === "number") {
             const decayMs = Math.max(0, Math.floor(deltaSeconds * 1000));
             gameState.screenFlash.ttlMs = Math.max(0, gameState.screenFlash.ttlMs - decayMs);
-            if (gameState.screenFlash.ttlMs <= 0) {
-                gameState.screenFlash.alpha = 0;
-            }
+            if (gameState.screenFlash.ttlMs <= 0) gameState.screenFlash.alpha = 0;
         }
 
-        // enemy cleanup and rewards
+        if (Array.isArray(gameState.scheduledEffects) && gameState.scheduledEffects.length) {
+            const now = performance.now();
+            const remaining = [];
+            for (const e of gameState.scheduledEffects) {
+                if (e.dueAt > now) {
+                    remaining.push(e);
+                    continue;
+                }
+
+                if (e.type === "aftershock") {
+                    for (const enemy of gameState.enemies) {
+                        if (enemy._isMarkedDead) continue;
+                        const d = Math.hypot(enemy.x - e.x, enemy.y - e.y);
+                        if (d < e.radius) {
+                            const before = Math.max(0, enemy.hitPoints);
+                            const mult = (typeof typeMultFor === "function") ? typeMultFor(enemy, e.damageType) : 1;
+                            const raw = Math.max(0, Math.round(e.damagePerHit * (gameState?.modifiers?.towerDamageMultiplier ?? 1) * mult));
+                            const falloff = 1 - (d / e.radius);
+                            const applied = Math.min(before, Math.round(raw * falloff));
+                            if (applied > 0) {
+                                enemy.hitPoints = before - applied;
+                                enemy._lastHitTimestamp = performance.now();
+                                enemy._lastDamageAmount = applied;
+
+                                gameState.floatingTexts.push(
+                                    new FloatingText({
+                                        x: enemy.x,
+                                        y: enemy.y - (enemy.isBoss ? 26 : 18),
+                                        text: `-${applied}`,
+                                        color: "#fde68a",
+                                        lifetimeMs: 900,
+                                        risePixels: enemy.isBoss ? 34 : 28
+                                    })
+                                );
+                            }
+                        }
+                    }
+
+                    if (e.effects?.explosion?.enabled) {
+                        const exRadius = e.radius;
+                        const cx = e.x, cy = e.y;
+                        addExplosionParticles(gameState, cx, cy, exRadius);
+                        addScorchDecal(gameState, cx, cy, exRadius * 0.6, 20000, 0.75);
+                        triggerScreenFlash(gameState, e.effects.explosion.flashAlpha ?? 0.08, e.effects.explosion.flashTtl ?? 90);
+                    }
+                }
+            }
+            gameState.scheduledEffects = remaining;
+        }
+
         gameState.enemies = gameState.enemies.filter((enemy) => {
             if (enemy.hitPoints <= 0) {
                 gameState.money += enemy.rewardMoney;
@@ -313,14 +358,13 @@ export class CombatSystem {
             return !enemy._isMarkedDead;
         });
 
-        // remove finished projectiles
         gameState.projectiles = gameState.projectiles.filter((p) => !p._isComplete);
 
-        // store positions for next tick
         for (const enemy of gameState.enemies) {
             enemy._prevX = enemy.x;
             enemy._prevY = enemy.y;
         }
     }
+
 
 }
