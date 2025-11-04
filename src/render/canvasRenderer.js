@@ -175,7 +175,6 @@ export class CanvasRenderer {
         const waypoints = (this.gridMap && Array.isArray(this.gridMap.waypoints)) ? this.gridMap.waypoints : [];
         const hasDrawablePath = showBasePath && waypoints.length >= 2;
 
-        // grid
         for (let gridX = 0; gridX < this.gridMap.gridColumnCount; gridX += 1) {
             for (let gridY = 0; gridY < this.gridMap.gridRowCount; gridY += 1) {
                 const cellX = gridX * this.gridMap.gridCellSize;
@@ -186,7 +185,6 @@ export class CanvasRenderer {
             }
         }
 
-        // path
         if (hasDrawablePath) {
             ctx.beginPath();
             ctx.lineWidth = 20;
@@ -200,7 +198,6 @@ export class CanvasRenderer {
             ctx.stroke();
         }
 
-        // decals below units
         if (Array.isArray(gameState.decals) && gameState.decals.length) {
             for (const d of gameState.decals) {
                 const fade = (typeof d.maxLifeMs === "number" && d.maxLifeMs > 0)
@@ -221,12 +218,10 @@ export class CanvasRenderer {
             }
         }
 
-        // towers, enemies, projectiles
         for (const tower of gameState.towers) this.drawTower(tower);
         for (const enemy of gameState.enemies) this.drawEnemy(enemy);
         for (const projectile of gameState.projectiles) this.drawProjectile(projectile);
 
-        // particles (explosion fragments, trails)
         if (Array.isArray(gameState.particles) && gameState.particles.length) {
             ctx.save();
             ctx.globalCompositeOperation = "lighter";
@@ -246,7 +241,6 @@ export class CanvasRenderer {
             ctx.globalAlpha = 1;
         }
 
-        // lightning bolts
         if (Array.isArray(gameState.lightningBeams) && gameState.lightningBeams.length) {
             const now = performance.now();
             const kept = [];
@@ -286,7 +280,40 @@ export class CanvasRenderer {
             gameState.lightningBeams = kept;
         }
 
-        // subtle screen flash overlay (e.g., nuke)
+        if (Array.isArray(gameState.ripples) && gameState.ripples.length) {
+            const now = performance.now();
+            const keptRipples = [];
+            for (const r of gameState.ripples) {
+                const age = Math.max(0, now - (r.createdAt || now));
+                const dur = Math.max(1, r.durationMs || 500);
+                if (age >= dur) continue;
+
+                const t = age / dur;
+                const radius = r.startRadius + (r.endRadius - r.startRadius) * t;
+                const fade = (1 - t) * (r.alpha ?? 0.6);
+
+                ctx.save();
+                ctx.globalCompositeOperation = "screen";
+                ctx.lineCap = "round";
+
+                ctx.strokeStyle = hexToRgba(r.glowColor || "#fbbf24", 0.35 * fade);
+                ctx.lineWidth = Math.max(1, r.glowWidth || 8);
+                ctx.beginPath();
+                ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.strokeStyle = hexToRgba(r.coreColor || "#fde68a", 0.9 * fade);
+                ctx.lineWidth = Math.max(1, r.coreWidth || 3);
+                ctx.beginPath();
+                ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.restore();
+                keptRipples.push(r);
+            }
+            gameState.ripples = keptRipples;
+        }
+
         if (gameState.screenFlash && gameState.screenFlash.ttlMs > 0 && (gameState.screenFlash.alpha || 0) > 0) {
             const maxT = Math.max(1, gameState.screenFlash.maxTtlMs || gameState.screenFlash.ttlMs);
             const ratio = Math.max(0, Math.min(1, gameState.screenFlash.ttlMs / maxT));
@@ -299,7 +326,6 @@ export class CanvasRenderer {
             ctx.restore();
         }
 
-        // hover range ring
         if (this.hoverPreview && this.configuration.showRangeOnHover) {
             const { x, y, radiusPixels, strokeColor } = this.hoverPreview;
             ctx.save();
@@ -312,20 +338,16 @@ export class CanvasRenderer {
             ctx.restore();
         }
 
-        // placement ghost
         if (this.placementGhost) this.drawGhostTower(this.placementGhost);
 
-        // floating combat text
         if (Array.isArray(gameState.floatingTexts)) {
             for (const ft of gameState.floatingTexts) this.drawFloatingText(ft);
         }
 
-        // map designer overlay
         if (this._mapDesignerPath && this._mapDesignerPath.length) {
             this.drawMapDesignerOverlay(this._mapDesignerPath);
         }
 
-        // debug HUD
         ctx.save();
         ctx.globalCompositeOperation = "source-over";
         ctx.globalAlpha = 1;
@@ -341,6 +363,7 @@ export class CanvasRenderer {
         ctx.fillText(`Projectiles: ${gameState.projectiles.length}`, 18, 56);
         ctx.restore();
     }
+
 
 
     /**

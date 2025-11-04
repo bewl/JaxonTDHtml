@@ -345,6 +345,23 @@ export class CombatSystem {
                         addScorchDecal(gameState, cx, cy, exRadius * 0.6, 20000, 0.75);
                         triggerScreenFlash(gameState, e.effects.explosion.flashAlpha ?? 0.08, e.effects.explosion.flashTtl ?? 90);
                     }
+
+                    if (e.ripple) {
+                        const r = e.ripple;
+                        (gameState.ripples ||= []).push({
+                            x: e.x,
+                            y: e.y,
+                            startRadius: r.startRadius,
+                            endRadius: r.endRadius,
+                            durationMs: r.durationMs,
+                            coreWidth: r.coreWidth,
+                            glowWidth: r.glowWidth,
+                            coreColor: r.coreColor,
+                            glowColor: r.glowColor,
+                            alpha: r.alpha,
+                            createdAt: now
+                        });
+                    }
                 }
             }
             gameState.scheduledEffects = remaining;
@@ -365,6 +382,4 @@ export class CombatSystem {
             enemy._prevY = enemy.y;
         }
     }
-
-
 }

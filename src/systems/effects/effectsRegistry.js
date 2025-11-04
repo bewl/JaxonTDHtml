@@ -242,6 +242,17 @@ function applyAftershockImpact(gameState, projectile, cfg, aoeRadius) {
     const flashAlpha = cfg.flashAlpha ?? 0.08;
     const flashTtl = cfg.flashTtl ?? 90;
 
+    const rippleCfg = cfg.ripple || {};
+    const rippleEnabled = rippleCfg.enabled !== false; // default on
+    const rippleStart = Math.max(2, rippleCfg.startRadius ?? Math.min(14, Math.floor(radius * 0.18)));
+    const rippleEnd = Math.max(rippleStart + 2, rippleCfg.endRadius ?? Math.floor(radius * 1.1));
+    const rippleDurationMs = Math.max(120, rippleCfg.durationMs ?? 520);
+    const rippleCoreWidth = Math.max(1, rippleCfg.coreWidth ?? 3);
+    const rippleGlowWidth = Math.max(rippleCoreWidth + 1, rippleCfg.glowWidth ?? rippleCoreWidth * 3);
+    const rippleCoreColor = rippleCfg.coreColor || "#fde68a";
+    const rippleGlowColor = rippleCfg.glowColor || "#fbbf24";
+    const rippleAlpha = Math.max(0, Math.min(1, rippleCfg.alpha ?? 0.6));
+
     const entry = {
         type: "aftershock",
         x: projectile._currentX,
@@ -251,10 +262,21 @@ function applyAftershockImpact(gameState, projectile, cfg, aoeRadius) {
         damageType: projectile.damageType || "physical",
         towerTypeKey: projectile.towerTypeKey,
         effects: { explosion: { enabled: true, flashAlpha, flashTtl } },
+        ripple: rippleEnabled ? {
+            startRadius: rippleStart,
+            endRadius: rippleEnd,
+            durationMs: rippleDurationMs,
+            coreWidth: rippleCoreWidth,
+            glowWidth: rippleGlowWidth,
+            coreColor: rippleCoreColor,
+            glowColor: rippleGlowColor,
+            alpha: rippleAlpha
+        } : null,
         dueAt: performance.now() + delayMs
     };
     (gameState.scheduledEffects ||= []).push(entry);
 }
+
 
 export const EffectsRegistry = {
     applyTravel(gameState, projectile, deltaSeconds) {
