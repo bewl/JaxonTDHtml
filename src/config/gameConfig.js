@@ -59,7 +59,18 @@ export const GAME_CONFIG = {
             baseRadiusPixels: 14,
             splash: { radiusPixels: 80 },
         },
-
+        // inside export const GAME_CONFIG = { ... towersByTypeKey: { ... } }
+        nuke: {
+            displayName: "Nuke",
+            buildCost: 300,
+            uiColor: "#ffaa00",
+            damagePerShot: 400,
+            attacksPerSecond: 0.15,          // very slow
+            attackRangePixels: 220,          // long range
+            splash: { radiusPixels: 120 },   // big boom
+            sizeCells: 2,                     // << NEW: occupies 2x2 cells
+            visualScale: 4,   // draw it bigger than normal
+        },
     },
     ui: {
         bossBar: {

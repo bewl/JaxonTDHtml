@@ -48,6 +48,38 @@ function computeMaxPathXCell(pathCells) {
     return pathCells.reduce((maximum, cell) => Math.max(maximum, cell.x), 0);
 }
 
+// Centers a multi-cell footprint on its geometric middle.
+// gridX, gridY are the TOP-LEFT cell of the footprint.
+function footprintCenterPixels(gridX, gridY, sizeCells, cellSize) {
+    const half = sizeCells * cellSize / 2;
+    return {
+        x: gridX * cellSize + half,
+        y: gridY * cellSize + half,
+    };
+}
+
+function isAreaOnPath(gridMap, topLeftX, topLeftY, sizeCells) {
+    for (let gx = topLeftX; gx < topLeftX + sizeCells; gx += 1) {
+        for (let gy = topLeftY; gy < topLeftY + sizeCells; gy += 1) {
+            if (gridMap.isGridCellOnPath(gx, gy)) return true;
+        }
+    }
+    return false;
+}
+
+function doesAreaOverlapAnyTower(gameState, topLeftX, topLeftY, sizeCells) {
+    return gameState.towers.some(t => {
+        const s = Math.max(1, Math.floor(Number(t.sizeCells ?? 1)));
+        const ax1 = topLeftX, ay1 = topLeftY;
+        const ax2 = topLeftX + sizeCells, ay2 = topLeftY + sizeCells;
+        const bx1 = t.gridX, by1 = t.gridY;
+        const bx2 = t.gridX + s, by2 = t.gridY + s;
+        // AABB overlap in grid coords
+        return ax1 < bx2 && ax2 > bx1 && ay1 < by2 && ay2 > by1;
+    });
+}
+
+
 function recomputeGridForCanvas(configuration, gameState, renderer, gameCanvas) {
     // Optionally auto-scale grid cell size based on canvas CSS width
     if (configuration.autoScaleGridCellSize) {
@@ -105,6 +137,13 @@ function recomputeGridForCanvas(configuration, gameState, renderer, gameCanvas) 
     }
 }
 
+function forEachFootprintCell(gridX, gridY, sizeCells, fn) {
+    for (let x = gridX; x < gridX + sizeCells; x += 1) {
+        for (let y = gridY; y < gridY + sizeCells; y += 1) {
+            fn(x, y);
+        }
+    }
+}
 
 function handleWindowResize(configuration, gameState, renderer, gameCanvas, renderingContext2D) {
     resizeAndScaleCanvasForDevicePixelRatio(gameCanvas, renderingContext2D);
@@ -159,10 +198,18 @@ const gameState = {
 
         createTower: (towerTypeKey, gridX, gridY) => {
             const definition = { ...configuration.towersByTypeKey[towerTypeKey] };
-            const pixelX = gridX * configuration.gridCellSize + configuration.gridCellSize / 2;
-            const pixelY = gridY * configuration.gridCellSize + configuration.gridCellSize / 2;
+            const sizeCells = Math.max(1, Math.floor(Number(definition.sizeCells ?? 1)));
+
+            const { x: pixelX, y: pixelY } = footprintCenterPixels(
+                gridX,
+                gridY,
+                sizeCells,
+                configuration.gridCellSize
+            );
+
             return new TowerEntity(definition, pixelX, pixelY, gridX, gridY, towerTypeKey);
         },
+
     },
 };
 
@@ -246,12 +293,23 @@ function selectTowerType(towerTypeKey, buttonElement) {
  */
 function tryPlaceSelectedTowerAtCell(gridX, gridY) {
     if (!selectedTowerTypeKey) return false;
-    if (gameState.gridMap.isGridCellOnPath(gridX, gridY)) return false;
-    if (gameState.towers.some((t) => t.gridX === gridX && t.gridY === gridY)) return false;
 
     const def = configuration.towersByTypeKey[selectedTowerTypeKey];
     if (!def) return false;
 
+    const sizeCells = Math.max(1, Math.floor(Number(def.sizeCells ?? 1)));
+
+    // Clamp to keep the full footprint in-bounds
+    const maxX = gameState.gridMap.gridColumnCount - sizeCells;
+    const maxY = gameState.gridMap.gridRowCount - sizeCells;
+    const topLeftX = Math.min(Math.max(0, gridX), maxX);
+    const topLeftY = Math.min(Math.max(0, gridY), maxY);
+
+    const isOnPath = isAreaOnPath(gameState.gridMap, topLeftX, topLeftY, sizeCells);
+    const isOccupied = doesAreaOverlapAnyTower(gameState, topLeftX, topLeftY, sizeCells);
+    if (isOnPath || isOccupied) return false;
+
+    // Cost check
     if (gameState.money < def.buildCost) {
         toast.warn("You do not have enough money for that tower.", {
             title: "Insufficient Funds",
@@ -263,16 +321,16 @@ function tryPlaceSelectedTowerAtCell(gridX, gridY) {
 
     gameState.money -= def.buildCost;
 
-    const tower = gameState.factories.createTower(selectedTowerTypeKey, gridX, gridY);
+    const tower = gameState.factories.createTower(selectedTowerTypeKey, topLeftX, topLeftY);
     gameState.towers.push(tower);
     lastPlacedTower = tower;
 
-    // keep UI in sync
     updateTowerButtonsDisableState(gameState);
     refreshStatsPanel(userInterface, gameState, configuration);
-
     return true;
 }
+
+
 
 
 buildTowerButtonsFromConfig(userInterface, configuration, selectTowerType);
@@ -555,7 +613,12 @@ const adminPanel = createAdminPanel(document, gameState, configuration, {
         const btn = findShopButtonForTowerKey(key);
         if (btn) selectTowerType(key, btn);
     },
-    mapDesignerHooks
+    mapDesignerHooks,
+    startWaveNow: () => {
+        if (!waveSpawnerSystem.isActive) {
+            waveSpawnerSystem.startWave(gameState);
+        }
+    }
 });
 
 const openAdminButton = document.getElementById("openAdminPanelButton");
@@ -762,24 +825,37 @@ gameCanvas.addEventListener("mousemove", (mouseEvent) => {
             : null;
 
         if (towerDefinition) {
-            const centerX = gridX * configuration.gridCellSize + configuration.gridCellSize / 2;
-            const centerY = gridY * configuration.gridCellSize + configuration.gridCellSize / 2;
+            const sizeCells = Math.max(1, Math.floor(Number(towerDefinition.sizeCells ?? 1)));
 
-            const isOnPath = gameState.gridMap.isGridCellOnPath(gridX, gridY);
-            const isOccupied = gameState.towers.some((t) => t.gridX === gridX && t.gridY === gridY);
+            // Clamp footprint to grid
+            const maxX = gameState.gridMap.gridColumnCount - sizeCells;
+            const maxY = gameState.gridMap.gridRowCount - sizeCells;
+            const topLeftX = Math.min(Math.max(0, gridX), maxX);
+            const topLeftY = Math.min(Math.max(0, gridY), maxY);
+
+            const center = footprintCenterPixels(
+                topLeftX,
+                topLeftY,
+                sizeCells,
+                configuration.gridCellSize
+            );
+
+            const isOnPath = isAreaOnPath(gameState.gridMap, topLeftX, topLeftY, sizeCells);
+            const isOccupied = doesAreaOverlapAnyTower(gameState, topLeftX, topLeftY, sizeCells);
             const isValid = !isOnPath && !isOccupied;
 
             renderer.setPlacementGhost({
-                x: centerX,
-                y: centerY,
+                x: center.x,
+                y: center.y,
                 uiColor: towerDefinition.uiColor,
                 towerTypeKey: selectedTowerTypeKey,
                 isValid,
+                sizeCells, // <<< important for ghost size
             });
 
             renderer.setHoverPreview({
-                x: centerX,
-                y: centerY,
+                x: center.x,
+                y: center.y,
                 radiusPixels: towerDefinition.attackRangePixels,
                 strokeColor: towerDefinition.uiColor,
             });

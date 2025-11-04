@@ -63,6 +63,97 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
     panel.append(header, tabsBar, contentHost);
     rootDocument.body.appendChild(panel);
 
+    // --- Fix content height so tabs don't make the panel jump ---
+    function computeAndLockContentHeight() {
+        const host = contentHost;                    // your existing container
+        const panels = host.querySelectorAll('.admin-tabpanel');
+
+        if (!panels.length) return;
+
+        // Measure the tallest panel (temporarily force measureable)
+        let max = 0;
+        panels.forEach(p => {
+            const prevDisplay = p.style.display;
+            p.style.display = 'block';
+            p.style.visibility = 'hidden';
+            p.style.position = 'absolute';
+            p.style.inset = '0';
+
+            // include padding content
+            const h = p.scrollHeight;
+            if (h > max) max = h;
+
+            // revert
+            p.style.display = prevDisplay || (p.classList.contains('active') ? 'block' : 'none');
+            p.style.visibility = '';
+            p.style.position = '';
+            p.style.inset = '';
+        });
+
+        // Cap to viewport so it doesn't get silly tall; lets content scroll inside
+        const cap = Math.floor(window.innerHeight * 0.64);
+        const min = 320;
+        const locked = Math.max(min, Math.min(max, cap));
+
+        // Expose via CSS var so CSS can use it
+        host.style.setProperty('--admin-content-h', locked + 'px');
+    }
+
+    function lockAdminStickyAndContentHeights() {
+        const headerH = header?.offsetHeight || 0;
+        const tabsH = tabsBar?.offsetHeight || 0;
+
+        // expose to CSS
+        panel.style.setProperty('--admin-header-h', headerH + 'px');
+        panel.style.setProperty('--admin-tabs-h', tabsH + 'px');
+
+        // find tallest tab panel to pick a pleasant content height cap
+        const panels = contentHost.querySelectorAll('.admin-tabpanel');
+        let maxH = 0;
+        panels.forEach(p => {
+            const d = p.style.display;
+            const v = p.style.visibility;
+            const pos = p.style.position;
+            const ins = p.style.inset;
+
+            p.style.display = 'block';
+            p.style.visibility = 'hidden';
+            p.style.position = 'absolute';
+            p.style.inset = '0';
+
+            maxH = Math.max(maxH, p.scrollHeight);
+
+            p.style.display = d || (p.classList.contains('active') ? 'block' : 'none');
+            p.style.visibility = v;
+            p.style.position = pos;
+            p.style.inset = ins;
+        });
+
+        // Cap to viewport; content scrolls inside panels
+        const cap = Math.floor(window.innerHeight * 0.64);
+        const min = 320;
+        const locked = Math.max(min, Math.min(maxH, cap));
+        contentHost.style.setProperty('--admin-content-h', locked + 'px');
+    }
+
+    // initial lock
+    //lockAdminStickyAndContentHeights();
+
+    // re-lock on resize and when switching tabs (in your existing tab switch function)
+    window.addEventListener('resize', () => {
+        clearTimeout(window.__adminStickiesTimer);
+        window.__adminStickiesTimer = setTimeout(lockAdminStickyAndContentHeights, 120);
+    });
+
+
+    // Call once after render, and also on resize
+    computeAndLockContentHeight();
+    window.addEventListener('resize', () => {
+        // Debounce lightly
+        clearTimeout(window.__adminContentHTimer);
+        window.__adminContentHTimer = setTimeout(computeAndLockContentHeight, 120);
+    });
+
     setMapDesignerUiEnabled(false);
 
     const mdToggle = q("#md_enable");
@@ -94,20 +185,28 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         if (activeSectionId === id) return;
         activeSectionId = id;
 
-        // Tab active styles
+        // Update tab button active state
         for (const s of sections) {
             if (s.id === id) s.buttonEl.classList.add("active");
             else s.buttonEl.classList.remove("active");
         }
 
-        // Swap content
+        // Rebuild the content host with a single .admin-tabpanel that fills and scrolls
         contentHost.innerHTML = "";
         const section = sections.find(s => s.id === id);
         if (!section) return;
 
-        const el = section.render();
-        if (el) contentHost.appendChild(el);
+        // Wrap whatever the section renders inside a .admin-tabpanel
+        const panelEl = createEl("div", { class: "admin-tabpanel active" });
+        const inner = section.render();
+        if (inner) panelEl.appendChild(inner);
+        contentHost.appendChild(panelEl);
+
+        // Recompute offsets + lock content height now that the panel is present
+        lockAdminStickyAndContentHeights();
+        computeAndLockContentHeight();
     }
+
 
     function setMapDesignerUiEnabled(isEnabled) {
         // Add any selectors you use for your MD controls here:
@@ -263,6 +362,8 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
                 createEl("div", { class: "row2" }, [
                     createLabeledNumber("Range (px)", "tw_range", 120, 8, 2000, 1),
                     createLabeledNumber("Splash Radius (px) (0 = none)", "tw_splash", 0, 0, 600, 1),
+                    createLabeledNumber("Size (cells)", "tw_size", 1, 1, 6, 1),
+                    createLabeledNumber("Visual Scale", "tw_vscale", 1.0, 0.1, 5, 0.1),
                 ]),
 
                 createLabeledSelect("Damage Type", "tw_dmgType", DAMAGE_TYPES, "physical"),
@@ -294,6 +395,8 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
                 const rangePx = int("#tw_range", 40);
                 const splashPx = int("#tw_splash", 0);
                 const dmgType = str("#tw_dmgType", "physical");
+                const sizeCells = Math.max(1, Math.min(6, int("#tw_size", 1)));
+                const visualScale = num("#tw_vscale", 1);
 
                 const def = {
                     displayName: name,
@@ -303,6 +406,8 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
                     attacksPerSecond: aps,
                     attackRangePixels: rangePx,
                     damageType: dmgType,
+                    sizeCells: Math.max(1, sizeCells),
+                    visualScale: Number.isFinite(visualScale) ? visualScale : 1,
                 };
                 if (splashPx > 0) def.splash = { radiusPixels: splashPx };
 
@@ -331,11 +436,17 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
         render: () => {
             const defaultMoney = Number(configuration?.startingMoney ?? gameState.money ?? 0);
             const defaultLives = Number(configuration?.startingLives ?? gameState.lives ?? 0);
+            const defaultWave = Number(gameState.currentWaveNumber ?? 0);
+            const maxWave = Number(configuration?.maximumWaveNumber ?? 0);
 
             const form = createEl("form", { id: "economyForm", class: "admin-form" }, [
                 createEl("div", { class: "row2" }, [
                     createLabeledNumber("Set Money ($)", "setMoney", defaultMoney, 0, 9_999_999, 1),
                     createLabeledNumber("Set Lives", "setLives", defaultLives, 0, 9_999, 1),
+                ]),
+                createEl("div", { class: "row2" }, [
+                    createLabeledNumber("Current Wave", "setWave", defaultWave, 0, maxWave, 1),
+                    createEl("div") // spacer
                 ]),
                 createEl("div", { class: "row" }, [
                     createEl("button", { type: "submit", class: "admin-btn" }, ["Apply"])
@@ -351,9 +462,14 @@ export function createAdminPanel(rootDocument, gameState, configuration, uiHooks
                 e.preventDefault();
                 const money = int("#setMoney", defaultMoney);
                 const lives = int("#setLives", defaultLives);
+                const wave = int("#setWave", defaultWave);
+
                 gameState.money = Math.max(0, money);
                 gameState.lives = Math.max(0, lives);
+                const clampedWave = Math.max(0, Math.min(wave, maxWave));
+                gameState.currentWaveNumber = clampedWave;
             });
+
 
             return section;
         }

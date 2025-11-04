@@ -268,59 +268,71 @@ export class CanvasRenderer {
         ctx.save();
         ctx.translate(tower.x, tower.y);
 
-        // Ensure the tower has a rotation value (in radians). If your tower
-        // update system sets this (recommended), we respect it here; otherwise
-        // fall back to zero so we do not crash.
+        // === Visual scaling ===
+        // Use tower.visualScale if defined, else default to 1
+        const scale = tower.visualScale ?? 1;
+
+        // Apply visual scale
+        ctx.scale(scale, scale);
+
         const rotationRadians = (typeof tower.rotationRadians === "number")
             ? tower.rotationRadians
             : 0;
-
-        // Apply rotation so the barrel points toward the current target direction.
         ctx.rotate(rotationRadians);
 
-        // Colors by tower type (kept from your prior styling)
         let circleFillColor = "#123b40";
         let rectFillColor = tower.uiColor || "#84cc16";
         if (tower.towerTypeKey === "sniper") circleFillColor = "#40334d";
         if (tower.towerTypeKey === "splash") circleFillColor = "#4b322d";
 
-        // Base body (unaffected by rotation visually since we rotate the whole local space)
         ctx.beginPath();
-        ctx.arc(0, 0, 12, 0, Math.PI * 2);
+        ctx.arc(0, 0, 12, 0, Math.PI * 2); // base circle
         ctx.fillStyle = circleFillColor;
         ctx.fill();
 
-        // Barrel points "forward" (positive X in local space) after rotation.
-        // Previously: ctx.fillRect(-6, -6, 12, 6) — a centered bar.
-        // Now: extend outward so it visibly aims at targets.
         ctx.fillStyle = rectFillColor;
-        ctx.fillRect(0, -3, 14, 6);
+        ctx.fillRect(0, -3, 14, 6); // barrel
 
         ctx.restore();
     }
 
+
+
     drawGhostTower(ghost) {
         const ctx = this.renderingContext2D;
-        const { x, y, uiColor } = ghost;
+        const { x, y, uiColor, isValid, sizeCells = 1 } = ghost;
+        const cellSize = this.gridMap.gridCellSize;
+        const widthPx = sizeCells * cellSize;
+        const heightPx = sizeCells * cellSize;
 
         ctx.save();
         ctx.translate(x, y);
 
-        // Semi-transparent base + head
-        ctx.globalAlpha = 0.35;
+        // Footprint rect centered on (x, y)
+        ctx.globalAlpha = 0.45;
+        ctx.fillStyle = isValid
+            ? "rgba(12, 59, 64, 0.45)"
+            : "rgba(128, 32, 32, 0.45)";
+        ctx.strokeStyle = isValid
+            ? "rgba(255,255,255,0.35)"
+            : "rgba(255, 80, 80, 0.8)";
+        ctx.lineWidth = 2;
 
-        // Base circle (use a darker neutral to avoid overpowering the map)
         ctx.beginPath();
-        ctx.arc(0, 0, 12, 0, Math.PI * 2);
-        ctx.fillStyle = "#0c3b40";
+        ctx.rect(-widthPx / 2, -heightPx / 2, widthPx, heightPx);
         ctx.fill();
+        ctx.stroke();
 
-        // Turret bar colored to match UI color
+        // Optional: subtle center “barrel” hint so orientation remains visible
+        ctx.globalAlpha = 0.65;
         ctx.fillStyle = uiColor || "#84cc16";
-        ctx.fillRect(-6, -6, 12, 6);
+        const barrelLen = Math.max(14, Math.floor(14 + (sizeCells - 1) * 6));
+        ctx.fillRect(-barrelLen / 2, -3, barrelLen, 6);
 
         ctx.restore();
     }
+
+
 
     drawEnemy(enemy) {
         const ctx = this.renderingContext2D;

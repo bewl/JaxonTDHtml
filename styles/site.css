@@ -285,28 +285,27 @@ input[type="number"] {
 }
 
 /* ====================== Admin Panel (Overlay) ====================== */
+/* ====================== Admin Panel ====================== */
 .admin-panel {
     position: fixed;
     right: 16px;
     bottom: 16px;
     width: min(420px, 92vw);
+    /* Let the panel itself size to viewport and host an internal scroller */
     max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+
     background: var(--panel);
     color: var(--text);
-    border: 1px solid var(--border-weak);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-strong), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.03);
     transform: translateY(24px);
     opacity: 0;
     pointer-events: none;
     transition: opacity 160ms ease, transform 160ms ease;
     z-index: 1001;
-
-    /* Layout: header (sticky), tabs (sticky optional), content (scrolls) */
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    /* delegate scroll to .admin-content */
 }
 
 .admin-panel.open {
@@ -315,19 +314,50 @@ input[type="number"] {
     pointer-events: auto;
 }
 
-/* Header (sticky) */
+/* Sticky header always visible */
 .admin-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border-weak);
     position: sticky;
     top: 0;
     z-index: 10;
     background: var(--panel);
-    box-shadow: var(--shadow-panel-sep);
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
 }
+
+/* Tabs bar sticks under header */
+.admin-tabs {
+    position: sticky;
+    top: var(--admin-header-h, 0px);
+    z-index: 9;
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 0 10px;
+    background: var(--panel);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+/* Content becomes the ONLY scroller; height is locked via JS-set CSS var */
+.admin-content {
+    /* Height bounded both by measured tallest panel and by viewport */
+    height: min(
+      var(--admin-content-h, 420px),
+      calc(90vh - var(--admin-header-h, 0px) - var(--admin-tabs-h, 0px))
+    );
+    min-height: 320px;
+
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+
+    background: linear-gradient(180deg, #0f1724 0%, #0c1320 100%);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-top: none;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    padding: 12px;
+}
+
 
 .admin-title {
     font-weight: 600;
@@ -345,19 +375,6 @@ input[type="number"] {
 }
 
 /* Tabs (look like real tabs; sticky under header) */
-.admin-tabs {
-    display: flex;
-    align-items: flex-end;
-    gap: 4px;
-    padding: 0 10px;
-    background: var(--panel);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    position: sticky;
-    top: 42px;
-    /* adjust if header height differs; or remove for non-sticky tabs */
-    z-index: 9;
-}
-
 .admin-tab {
     -webkit-appearance: none;
     appearance: none;
@@ -402,19 +419,6 @@ input[type="number"] {
     height: 3px;
     border-radius: 3px 3px 0 0;
     background: var(--accent);
-}
-
-/* Content host (only scroller) */
-.admin-content {
-    background: linear-gradient(180deg, #0f1724 0%, #0c1320 100%);
-    border: 1px solid var(--border-med);
-    border-top: none;
-    border-bottom-left-radius: var(--radius-md);
-    border-bottom-right-radius: var(--radius-md);
-    padding: 12px;
-    flex: 1 1 auto;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
 }
 
 /* Sections & form controls inside admin */
@@ -501,7 +505,8 @@ input[type="number"] {
     opacity: 0.45;
     filter: grayscale(100%);
     cursor: not-allowed !important;
-    pointer-events: none; /* prevents accidental clicks */
+    pointer-events: none;
+    /* prevents accidental clicks */
 }
 
 /* Buttons that are actually disabled via attribute, too */
@@ -521,7 +526,7 @@ input[type="number"] {
 .admin-panel .admin-btn[disabled],
 .admin-panel .admin-btn.is-disabled {
     background: #0a1a29;
-    border-color: rgba(255,255,255,0.05);
+    border-color: rgba(255, 255, 255, 0.05);
     box-shadow: none;
 }
 
@@ -530,7 +535,7 @@ input[type="number"] {
 .admin-panel textarea[disabled],
 .admin-panel select[disabled] {
     background: #081625;
-    border-color: rgba(255,255,255,0.05);
+    border-color: rgba(255, 255, 255, 0.05);
 }
 
 /* Optional: tool radios/labels show disabled state too */
@@ -542,7 +547,8 @@ input[type="number"] {
 /* === Map Designer: Enable Editor glow when active === */
 #md_enable.md-active,
 #md_enable[data-active="1"] {
-    border-color: rgba(99, 102, 241, 0.6);             /* indigo-ish */
+    border-color: rgba(99, 102, 241, 0.6);
+    /* indigo-ish */
     background: linear-gradient(180deg, #1a2140 0%, #151c33 100%);
     box-shadow:
         0 0 0 2px rgba(10, 15, 26, 0.9),
@@ -553,15 +559,20 @@ input[type="number"] {
 
 /* tasteful pulse while active */
 @keyframes mdGlowPulse {
-    0%, 100% { box-shadow:
-        0 0 0 2px rgba(10, 15, 26, 0.9),
-        0 0 0 4px rgba(99, 102, 241, 0.35),
-        0 8px 28px rgba(99, 102, 241, 0.25);
+
+    0%,
+    100% {
+        box-shadow:
+            0 0 0 2px rgba(10, 15, 26, 0.9),
+            0 0 0 4px rgba(99, 102, 241, 0.35),
+            0 8px 28px rgba(99, 102, 241, 0.25);
     }
-    50% { box-shadow:
-        0 0 0 2px rgba(10, 15, 26, 0.9),
-        0 0 0 5px rgba(129, 140, 248, 0.45),
-        0 10px 34px rgba(129, 140, 248, 0.30);
+
+    50% {
+        box-shadow:
+            0 0 0 2px rgba(10, 15, 26, 0.9),
+            0 0 0 5px rgba(129, 140, 248, 0.45),
+            0 10px 34px rgba(129, 140, 248, 0.30);
     }
 }
 
@@ -570,3 +581,72 @@ input[type="number"] {
     animation: mdGlowPulse 1.8s ease-in-out infinite;
 }
 
+/* The content host will be a fixed-height stack */
+.admin-content {
+    position: relative;
+    /* Fixed-but-responsive height; tweak to taste */
+    height: var(--admin-content-h, 54vh);
+    min-height: 320px;
+    max-height: 64vh;
+
+    /* This element does NOT scroll (its children do) */
+    overflow: hidden;
+
+    /* optional subtle transition to avoid jarring jumps */
+    transition: height 140ms ease;
+}
+
+/* Each tab panel fills the host, only the active is visible */
+.admin-tabpanel {
+    position: absolute;
+    inset: 0;
+    /* top:0 right:0 bottom:0 left:0 */
+    overflow: auto;
+    /* inner scroll, not outer jump */
+    display: none;
+    /* hidden by default */
+}
+
+.admin-tabpanel.active {
+    display: block;
+    /* show only the active panel */
+}
+
+/* Sticky pieces: header stays at top; tabs stay under header */
+.admin-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.admin-tabs {
+    position: sticky;
+    top: var(--admin-header-h, 0px);
+    z-index: 9;
+}
+
+/* Scroller: give it padding-top so content doesn't hide beneath sticky tabs */
+.admin-content {
+    position: relative;
+    height: var(--admin-content-h, 54vh);
+    min-height: 320px;
+    max-height: 64vh;
+    overflow: hidden;
+    /* panels scroll, not the host */
+    padding-top: var(--admin-tabs-h, 0px);
+    /* <<< key line */
+}
+
+/* Panels fill the host and scroll internally */
+.admin-tabpanel {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    display: none;
+    /* optional safety so the very last controls aren't behind the panel edge */
+    padding-bottom: 12px;
+}
+
+.admin-tabpanel.active {
+    display: block;
+}
