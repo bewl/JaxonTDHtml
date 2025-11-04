@@ -70,6 +70,10 @@ export const GAME_CONFIG = {
             splash: { radiusPixels: 120 },   // big boom
             sizeCells: 2,                     // << NEW: occupies 2x2 cells
             visualScale: 4,   // draw it bigger than normal
+            projectileEffects: {
+                explosion: { enabled: true, flashAlpha: 0.12, flashTtl: 100 },
+                knockback: { enabled: true, maxPx: 60 }
+            }
         },
     },
     ui: {
